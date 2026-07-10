@@ -1,8 +1,9 @@
-import { useState, useEffect, Suspense } from 'react';
-import { X, Tag, FolderOpen, Link, ExternalLink, Scissors, Trash2, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, ExternalLink, Scissors, Trash2, Plus } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import STLViewer from './STLViewer.jsx';
+import PlatformPicker from './PlatformPicker.jsx';
 
 const SLICERS = [
   { id: 'bambu', label: 'Bambu Studio', proto: (p) => `bambustudio://open?file=${encodeURIComponent(p)}` },
@@ -62,13 +63,18 @@ const s = {
   slicerRow: { display: 'flex', gap: 6, flexWrap: 'wrap' },
 };
 
-export default function FileDetail({ fileId, onClose, allTags, refreshTags }) {
+export default function FileDetail({ fileId, onClose, allTags, refreshTags, integrationStatus }) {
   const { data: file, refresh } = useApi(() => api.files.get(fileId), [fileId]);
-  const [addingTag, setAddingTag] = useState(false);
-  const [addingOrigin, setAddingOrigin] = useState(false);
+  const [addingTag,      setAddingTag]     = useState(false);
+  const [addingOrigin,   setAddingOrigin]  = useState(false);
+  const [showPicker,     setShowPicker]    = useState(false);
   const [originForm, setOriginForm] = useState({ source: 'cults3d', url: '', externalName: '', externalAuthor: '' });
   const [imgIdx, setImgIdx] = useState(0);
   const [notes, setNotes] = useState('');
+
+  const connectedPlatforms = integrationStatus
+    ? Object.entries(integrationStatus).filter(([, v]) => v.connected).map(([k]) => k)
+    : [];
 
   useEffect(() => { if (file) setNotes(file.notes || ''); }, [file]);
 
@@ -209,15 +215,38 @@ export default function FileDetail({ fileId, onClose, allTags, refreshTags }) {
 
               {addingOrigin && (
                 <div style={{ ...s.originCard, gap: 8 }}>
-                  <select style={s.select} value={originForm.source} onChange={(e) => setOriginForm((f) => ({ ...f, source: e.target.value }))}>
-                    {Object.entries(SOURCE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
-                  </select>
-                  <input style={s.input} placeholder="Name on source site" value={originForm.externalName} onChange={(e) => setOriginForm((f) => ({ ...f, externalName: e.target.value }))} />
-                  <input style={s.input} placeholder="Author / designer" value={originForm.externalAuthor} onChange={(e) => setOriginForm((f) => ({ ...f, externalAuthor: e.target.value }))} />
-                  <input style={s.input} placeholder="URL (optional)" value={originForm.url} onChange={(e) => setOriginForm((f) => ({ ...f, url: e.target.value }))} />
+                  {/* Platform picker toggle — only shown when at least one platform is connected */}
+                  {connectedPlatforms.length > 0 && (
+                    <button
+                      style={{ ...s.btn, background: showPicker ? 'var(--accent)' : 'var(--surface2)', border: '1px solid var(--border)', color: showPicker ? '#fff' : 'var(--text-dim)', width: '100%', justifyContent: 'center' }}
+                      onClick={() => setShowPicker(v => !v)}
+                    >
+                      {showPicker ? 'Fill manually instead' : '🔗 Import from connected platform'}
+                    </button>
+                  )}
+
+                  {showPicker ? (
+                    <PlatformPicker
+                      connectedPlatforms={connectedPlatforms}
+                      onSelect={(origin) => {
+                        setOriginForm({ source: origin.source, url: origin.url, externalName: origin.externalName, externalAuthor: origin.externalAuthor });
+                        setShowPicker(false);
+                      }}
+                    />
+                  ) : (
+                    <>
+                      <select style={s.select} value={originForm.source} onChange={(e) => setOriginForm((f) => ({ ...f, source: e.target.value }))}>
+                        {Object.entries(SOURCE_LABELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+                      </select>
+                      <input style={s.input} placeholder="Name on source site" value={originForm.externalName} onChange={(e) => setOriginForm((f) => ({ ...f, externalName: e.target.value }))} />
+                      <input style={s.input} placeholder="Author / designer" value={originForm.externalAuthor} onChange={(e) => setOriginForm((f) => ({ ...f, externalAuthor: e.target.value }))} />
+                      <input style={s.input} placeholder="URL (optional)" value={originForm.url} onChange={(e) => setOriginForm((f) => ({ ...f, url: e.target.value }))} />
+                    </>
+                  )}
+
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button style={{ ...s.btn, background: 'var(--accent)', color: '#fff' }} onClick={addOrigin}>Save</button>
-                    <button style={{ ...s.btn, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-dim)' }} onClick={() => setAddingOrigin(false)}>Cancel</button>
+                    <button style={{ ...s.btn, background: 'var(--accent)', color: '#fff' }} onClick={addOrigin} disabled={showPicker}>Save</button>
+                    <button style={{ ...s.btn, background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--text-dim)' }} onClick={() => { setAddingOrigin(false); setShowPicker(false); }}>Cancel</button>
                   </div>
                 </div>
               )}

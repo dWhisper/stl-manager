@@ -6,8 +6,10 @@ import filesRouter from './routes/files.js';
 import tagsRouter from './routes/tags.js';
 import collectionsRouter from './routes/collections.js';
 import originsRouter from './routes/origins.js';
-import searchRouter from './routes/search.js';
+import searchRouter       from './routes/search.js';
+import integrationsRouter from './routes/integrations.js';
 import { startWatcher, getWatcherStatus, reconcile } from './services/scanner.js';
+import { queueAll } from './services/thumbnailer.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -19,7 +21,8 @@ app.use('/api/files', filesRouter);
 app.use('/api/tags', tagsRouter);
 app.use('/api/collections', collectionsRouter);
 app.use('/api/origins', originsRouter);
-app.use('/api/search', searchRouter);
+app.use('/api/search',       searchRouter);
+app.use('/api/integrations', integrationsRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
@@ -43,5 +46,7 @@ app.listen(PORT, () => {
   getDb();
   startWatcher((count) => {
     console.log(`Initial index complete: ${count} files`);
+    const queued = queueAll();
+    if (queued) console.log(`Queued ${queued} thumbnail(s) for generation`);
   });
 });

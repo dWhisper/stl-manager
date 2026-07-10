@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Tag, FolderOpen, RefreshCw, Plus, Loader } from 'lucide-react';
+import { Tag, FolderOpen, RefreshCw, Plus, Loader, Plug } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 
@@ -38,7 +38,7 @@ const s = {
   },
 };
 
-export default function Sidebar({ filter, setFilter }) {
+export default function Sidebar({ filter, setFilter, view, setView }) {
   const [reconciling, setReconciling] = useState(false);
   const [reconcileMsg, setReconcileMsg] = useState(null);
   const [newTag, setNewTag] = useState('');
@@ -169,6 +169,20 @@ export default function Sidebar({ filter, setFilter }) {
             style={s.input} placeholder="+ New collection" value={newCol}
             onChange={(e) => setNewCol(e.target.value)} onKeyDown={createCollection}
           />
+        </div>
+      </div>
+
+      <div style={{ borderTop: '1px solid var(--border)', padding: '8px 0 4px' }}>
+        <div
+          onClick={() => setView('integrations')}
+          style={{
+            ...s.item,
+            ...(view === 'integrations' ? s.itemActive : {}),
+            color: view === 'integrations' ? 'var(--accent)' : 'var(--text-dim)',
+          }}
+        >
+          <Plug size={13} />
+          <span style={{ flex: 1 }}>Integrations</span>
         </div>
       </div>
 

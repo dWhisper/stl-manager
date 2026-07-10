@@ -4,6 +4,7 @@ import chokidar from 'chokidar';
 import { randomUUID } from 'crypto';
 import { getDb } from '../db/schema.js';
 import { scanZip, removeZipEntries } from './zipScanner.js';
+import { queueThumbnail, queueAll } from './thumbnailer.js';
 
 const STL_ROOT = process.env.STL_ROOT || '/nas';
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
@@ -22,8 +23,12 @@ function scheduleZipScan(zipPath) {
     zipPath,
     setTimeout(async () => {
       pendingZips.delete(zipPath);
-      const n = await scanZip(zipPath);
-      console.log(`Indexed ${n} STL(s) from ${path.basename(zipPath)}`);
+      const entries = await scanZip(zipPath);
+      console.log(`Indexed ${entries.length} STL(s) from ${path.basename(zipPath)}`);
+      // Queue thumbnails for newly discovered zip entries
+      for (const { id, thumbnail_path } of entries) {
+        if (!thumbnail_path) queueThumbnail(id);
+      }
     }, 1000)
   );
 }
@@ -33,29 +38,26 @@ export function startWatcher(onReady) {
 
   const db = getDb();
 
-  const upsert = db.prepare(`
-    INSERT INTO files (id, path, name, size, modified_at)
-    VALUES (@id, @path, @name, @size, @modified_at)
-    ON CONFLICT(path) DO UPDATE SET
-      name        = excluded.name,
-      size        = excluded.size,
-      modified_at = excluded.modified_at,
-      updated_at  = datetime('now')
-  `);
-
   const removeDirect = db.prepare(`DELETE FROM files WHERE path = ? AND zip_source IS NULL`);
 
   function upsertFile(filePath) {
     if (!STL_EXTS.test(filePath)) return;
     try {
       const stat = fs.statSync(filePath);
-      upsert.run({
-        id: randomUUID(),
-        path: filePath,
-        name: path.basename(filePath),
-        size: stat.size,
-        modified_at: stat.mtime.toISOString(),
-      });
+      const id = randomUUID();
+      // Returns the existing row's id on conflict so we can queue the right id
+      const row = db.prepare(`
+        INSERT INTO files (id, path, name, size, modified_at)
+        VALUES (@id, @path, @name, @size, @modified_at)
+        ON CONFLICT(path) DO UPDATE SET
+          name        = excluded.name,
+          size        = excluded.size,
+          modified_at = excluded.modified_at,
+          updated_at  = datetime('now')
+        RETURNING id, thumbnail_path
+      `).get({ id, path: filePath, name: path.basename(filePath), size: stat.size, modified_at: stat.mtime.toISOString() });
+      // Queue thumbnail only if not yet generated
+      if (row && !row.thumbnail_path) queueThumbnail(row.id);
     } catch {
       // file disappeared between event and stat — ignore
     }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { FileBox, FileArchive, AlertTriangle, Layers, ArrowLeftRight, Tag, Loader } from 'lucide-react';
+import { FileBox, FileArchive, AlertTriangle, Layers, ArrowLeftRight, Loader } from 'lucide-react';
 import { api } from '../api/client.js';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -50,7 +50,8 @@ function FlagBadge({ icon: Icon, label, color }) {
 }
 
 function FileRow({ file, onSelect, highlight }) {
-  const [hover, setHover] = useState(false);
+  const [hover, setHover]     = useState(false);
+  const [imgOk, setImgOk]     = useState(!!file.thumbnailPath);
   const Icon = file.inZip ? FileArchive : FileBox;
   return (
     <div
@@ -63,7 +64,16 @@ function FileRow({ file, onSelect, highlight }) {
       onMouseLeave={() => setHover(false)}
       onClick={() => onSelect(file.id)}
     >
-      <Icon size={18} strokeWidth={1.5} color={file.inZip ? 'var(--text-dim)' : 'var(--accent)'} style={{ flexShrink: 0 }} />
+      {file.thumbnailPath && imgOk ? (
+        <img
+          src={api.files.thumbUrl(file.id)}
+          alt=""
+          style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, flexShrink: 0, border: '1px solid var(--border)' }}
+          onError={() => setImgOk(false)}
+        />
+      ) : (
+        <Icon size={18} strokeWidth={1.5} color={file.inZip ? 'var(--text-dim)' : 'var(--accent)'} style={{ flexShrink: 0 }} />
+      )}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{file.name}</span>

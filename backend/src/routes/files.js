@@ -4,6 +4,7 @@ import path from 'path';
 import { getDb } from '../db/schema.js';
 import { getSiblingImages, getWatcherStatus } from '../services/scanner.js';
 import { extractToCache, decodeZipPath } from '../services/zipScanner.js';
+import { getPendingCount, queueAll } from '../services/thumbnailer.js';
 
 const router = Router();
 const STL_ROOT = process.env.STL_ROOT || '/nas';
@@ -94,7 +95,22 @@ router.patch('/:id', (req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/watcher', (req, res) => res.json(getWatcherStatus()));
+router.get('/watcher', (req, res) => res.json({ ...getWatcherStatus(), thumbPending: getPendingCount() }));
+
+// Serve the pre-generated thumbnail JPEG for a file
+router.get('/:id/thumb', (req, res) => {
+  const db   = getDb();
+  const file = db.prepare(`SELECT thumbnail_path FROM files WHERE id = ?`).get(req.params.id);
+  if (!file?.thumbnail_path || !fs.existsSync(file.thumbnail_path)) return res.status(404).end();
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(file.thumbnail_path);
+});
+
+// Enqueue thumbnail generation for all files that don't have one yet
+router.post('/thumbs/generate', (req, res) => {
+  const queued = queueAll();
+  res.json({ queued });
+});
 
 router.post('/:id/tags', (req, res) => {
   const db = getDb();

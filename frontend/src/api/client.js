@@ -17,7 +17,9 @@ export const api = {
     patch: (id, body) => req('PATCH', `/files/${id}`, body),
     addTag: (id, tagId) => req('POST', `/files/${id}/tags`, { tagId }),
     removeTag: (id, tagId) => req('DELETE', `/files/${id}/tags/${tagId}`),
-    stlUrl: (id) => `${BASE}/files/${id}/stl`,
+    stlUrl:   (id) => `${BASE}/files/${id}/stl`,
+    thumbUrl: (id) => `${BASE}/files/${id}/thumb`,
+    generateThumbs: () => req('POST', '/files/thumbs/generate'),
   },
   tags: {
     list: () => req('GET', '/tags'),
@@ -45,5 +47,26 @@ export const api = {
     create: (body) => req('POST', '/origins', body),
     update: (id, body) => req('PATCH', `/origins/${id}`, body),
     delete: (id) => req('DELETE', `/origins/${id}`),
+  },
+  integrations: {
+    status: ()                    => req('GET',    '/integrations'),
+    // Cults 3D
+    cults: {
+      connect:    (body)          => req('POST',   '/integrations/cults3d', body),
+      disconnect: ()              => req('DELETE', '/integrations/cults3d'),
+      profile:    ()              => req('GET',    '/integrations/cults3d/profile'),
+      library:    (p = {})        => req('GET',    `/integrations/cults3d/library?${new URLSearchParams(p)}`),
+      search:     (q, p = {})     => req('GET',    `/integrations/cults3d/search?q=${encodeURIComponent(q)}&${new URLSearchParams(p)}`),
+      creation:   (slug)          => req('GET',    `/integrations/cults3d/creation/${encodeURIComponent(slug)}`),
+    },
+    // MyMiniFactory
+    mmf: {
+      connect:    (body)          => req('POST',   '/integrations/myminifactory', body),
+      disconnect: ()              => req('DELETE', '/integrations/myminifactory'),
+      profile:    ()              => req('GET',    '/integrations/myminifactory/profile'),
+      library:    (p = {})        => req('GET',    `/integrations/myminifactory/library?${new URLSearchParams(p)}`),
+      search:     (q, p = {})     => req('GET',    `/integrations/myminifactory/search?q=${encodeURIComponent(q)}&${new URLSearchParams(p)}`),
+      object:     (id)            => req('GET',    `/integrations/myminifactory/object/${encodeURIComponent(id)}`),
+    },
   },
 };

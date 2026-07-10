@@ -69,6 +69,7 @@ router.get('/', (req, res) => {
       modifiedAt: f.modified_at, notes: f.notes,
       inZip: !!f.zip_source,
       zipSource: f.zip_source ? path.basename(f.zip_source) : null,
+      thumbnailPath: f.thumbnail_path ?? null,
       createdAt: f.created_at,
       tagNames, tagColors,
       supportState: state,

@@ -70,6 +70,17 @@ function migrate(db) {
     CREATE INDEX IF NOT EXISTS idx_collection_files_collection ON collection_files(collection_id);
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS platform_credentials (
+      platform     TEXT PRIMARY KEY,
+      username     TEXT NOT NULL,
+      api_key      TEXT NOT NULL,
+      profile_json TEXT,
+      connected_at TEXT DEFAULT (datetime('now')),
+      updated_at   TEXT DEFAULT (datetime('now'))
+    );
+  `);
+
   // Additive column migrations — safe to run on existing DBs
   const cols = db.pragma('table_info(files)').map((c) => c.name);
   if (!cols.includes('zip_source')) db.exec(`ALTER TABLE files ADD COLUMN zip_source TEXT`);

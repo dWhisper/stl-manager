@@ -42,24 +42,26 @@ export async function scanZip(zipPath) {
     INSERT INTO files (id, path, name, size, modified_at, zip_source, zip_entry)
     VALUES (@id, @path, @name, @size, @modified_at, @zip_source, @zip_entry)
     ON CONFLICT(path) DO UPDATE SET
-      name       = excluded.name,
-      size       = excluded.size,
+      name        = excluded.name,
+      size        = excluded.size,
       modified_at = excluded.modified_at,
-      zip_source = excluded.zip_source,
-      zip_entry  = excluded.zip_entry,
-      updated_at = datetime('now')
+      zip_source  = excluded.zip_source,
+      zip_entry   = excluded.zip_entry,
+      updated_at  = datetime('now')
+    RETURNING id, thumbnail_path
   `);
 
   const existingPaths = new Set(
     db.prepare(`SELECT path FROM files WHERE zip_source = ?`).all(zipPath).map((r) => r.path)
   );
   const seenPaths = new Set();
+  const upserted  = [];
 
   db.transaction(() => {
     for (const entry of stlEntries) {
       const virtualPath = encodeZipPath(zipPath, entry.path);
       seenPaths.add(virtualPath);
-      upsert.run({
+      const row = upsert.get({
         id: randomUUID(),
         path: virtualPath,
         name: path.basename(entry.path),
@@ -68,16 +70,14 @@ export async function scanZip(zipPath) {
         zip_source: zipPath,
         zip_entry: entry.path,
       });
+      if (row) upserted.push(row);
     }
-    // Purge entries that no longer exist inside the (re-scanned) zip
     for (const p of existingPaths) {
-      if (!seenPaths.has(p)) {
-        db.prepare(`DELETE FROM files WHERE path = ?`).run(p);
-      }
+      if (!seenPaths.has(p)) db.prepare(`DELETE FROM files WHERE path = ?`).run(p);
     }
   })();
 
-  return stlEntries.length;
+  return upserted;
 }
 
 export function removeZipEntries(zipPath) {
