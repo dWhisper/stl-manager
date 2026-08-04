@@ -63,6 +63,49 @@ Mount it now without rebooting:
 sudo mount -a
 ```
 
+### Linux (Arch / CachyOS)
+
+Install cifs-utils if not already present:
+
+```bash
+sudo pacman -S cifs-utils
+```
+
+Create a credentials file (keeps your password out of `/etc/fstab`):
+
+```bash
+sudo mkdir -p /etc/samba
+sudo nano /etc/samba/nas-credentials
+```
+
+```
+username=your_nas_user
+password=your_nas_password
+```
+
+```bash
+sudo chmod 600 /etc/samba/nas-credentials
+```
+
+Add a line to `/etc/fstab` so it mounts on boot:
+
+```
+//192.168.1.100/STLFiles  /mnt/nas/stl  cifs  credentials=/etc/samba/nas-credentials,uid=1000,gid=1000,iocharset=utf8,_netdev  0  0
+```
+
+Mount it now without rebooting:
+
+```bash
+sudo mount -a
+```
+
+Docker and Docker Compose are available in the official Arch/CachyOS repos and the `docker-compose` community plugin:
+
+```bash
+sudo pacman -S docker docker-compose
+sudo systemctl enable --now docker
+```
+
 ### uGreen NAS (via NAS OS)
 
 The SMB share path will look like `//192.168.1.x/STLFiles` where the IP is your NAS's LAN address. Find it in the NAS OS network settings. The share name is whatever you named the shared folder in the File Manager.
