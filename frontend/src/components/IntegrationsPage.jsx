@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle, Loader, ExternalLink, LogOut, User, RefreshCw } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
@@ -18,11 +18,11 @@ const s = {
     borderBottom: '1px solid var(--border)', background: 'var(--surface2)',
   },
   platformName: { fontWeight: 700, fontSize: 15, flex: 1 },
-  badge: (connected) => ({
+  badge: (connected, saved) => ({
     fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 20,
-    background: connected ? 'rgba(16,185,129,0.15)' : 'rgba(107,114,128,0.15)',
-    color: connected ? '#10b981' : 'var(--text-dim)',
-    border: `1px solid ${connected ? '#10b98133' : 'var(--border)'}`,
+    background: connected ? 'rgba(16,185,129,0.15)' : saved ? 'rgba(245,158,11,0.15)' : 'rgba(107,114,128,0.15)',
+    color: connected ? '#10b981' : saved ? '#f59e0b' : 'var(--text-dim)',
+    border: `1px solid ${connected ? '#10b98133' : saved ? '#f59e0b33' : 'var(--border)'}`,
   }),
   body:  { padding: 18 },
   label: { fontSize: 11, fontWeight: 600, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 4, display: 'block' },
@@ -76,32 +76,52 @@ function MmfLogo() {
 
 // ── Connection form ───────────────────────────────────────────────────────────
 
-function ConnectForm({ platform, onConnected }) {
-  const [username, setUsername] = useState('');
+function ConnectForm({ platform, info, onConnected }) {
+  const saved = info?.saved;
+  const [username, setUsername] = useState(info?.username ?? '');
   const [apiKey,   setApiKey]   = useState('');
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
 
-  const connect = api.integrations[platform === 'cults3d' ? 'cults' : 'mmf'].connect;
+  // Status loads after the first render; fill in the saved username once it arrives
+  useEffect(() => {
+    if (info?.username) setUsername((u) => u || info.username);
+  }, [info?.username]);
+
+  const { connect, forget } = api.integrations[platform === 'cults3d' ? 'cults' : 'mmf'];
   const docsUrl = platform === 'cults3d'
     ? 'https://cults3d.com/en/api/keys'
     : 'https://www.myminifactory.com/settings/profile';
 
   async function submit(e) {
     e.preventDefault();
-    if (!username.trim() || !apiKey.trim()) return;
+    // A blank key reuses the saved one
+    if (!username.trim() || (!apiKey.trim() && !saved)) return;
     setLoading(true);
     setError('');
     try {
       const res = await connect({ username: username.trim(), apiKey: apiKey.trim() });
       onConnected(res.profile);
     } catch (err) {
-      setError(err.message.includes('401') || err.message.includes('errors')
+      let message = err.message;
+      try { message = JSON.parse(message).error ?? message; } catch { /* not JSON */ }
+      setError(message.includes('401')
         ? 'Invalid credentials — check your username and API key.'
-        : err.message);
+        : message);
+      // The key is saved even when the check fails; refresh so the form shows that
+      onConnected();
     } finally {
       setLoading(false);
     }
+  }
+
+  async function forgetKey() {
+    if (!confirm('Delete the saved username and API key?')) return;
+    await forget();
+    setUsername('');
+    setApiKey('');
+    setError('');
+    onConnected();
   }
 
   return (
@@ -112,7 +132,7 @@ function ConnectForm({ platform, onConnected }) {
       </div>
       <div style={s.field}>
         <label style={s.label}>API Key</label>
-        <input style={s.input} type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="••••••••••••••••" autoComplete="off" />
+        <input style={s.input} type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder={saved ? 'Saved — leave blank to use the saved key' : '••••••••••••••••'} autoComplete="off" />
         <span style={s.hint}>
           Generate your API key at{' '}
           <a href={docsUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
@@ -121,10 +141,17 @@ function ConnectForm({ platform, onConnected }) {
         </span>
       </div>
       {error && <div style={s.error}>{error}</div>}
-      <button type="submit" style={s.btn('primary')} disabled={loading}>
-        {loading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={13} />}
-        {loading ? 'Connecting…' : 'Connect'}
-      </button>
+      <div style={s.row}>
+        <button type="submit" style={s.btn('primary')} disabled={loading}>
+          {loading ? <Loader size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <CheckCircle size={13} />}
+          {loading ? 'Connecting…' : 'Connect'}
+        </button>
+        {saved && (
+          <button type="button" style={s.btn('ghost')} onClick={forgetKey} disabled={loading}>
+            Forget saved key
+          </button>
+        )}
+      </div>
     </form>
   );
 }
@@ -201,16 +228,17 @@ function ProfilePanel({ platform, info, onDisconnect }) {
 
 function PlatformCard({ platformKey, label, Logo, info, refresh }) {
   const connected = info?.connected;
+  const saved     = info?.saved;
   return (
     <div style={s.card}>
       <div style={s.cardHeader}>
         <Logo />
         <span style={s.platformName}>{label}</span>
-        <span style={s.badge(connected)}>{connected ? 'Connected' : 'Not connected'}</span>
+        <span style={s.badge(connected, saved)}>{connected ? 'Connected' : saved ? 'Key saved' : 'Not connected'}</span>
       </div>
       {connected
         ? <ProfilePanel platform={platformKey} info={info} onDisconnect={refresh} />
-        : <ConnectForm  platform={platformKey} onConnected={refresh} />}
+        : <ConnectForm  platform={platformKey} info={info} onConnected={refresh} />}
     </div>
   );
 }
@@ -247,7 +275,7 @@ export default function IntegrationsPage() {
 
       <div style={{ fontSize: 12, color: 'var(--text-dim)', borderTop: '1px solid var(--border)', paddingTop: 16 }}>
         <strong>Note:</strong> Internet access is required for platform API calls. API keys are stored in plaintext
-        in the local SQLite database. The Cults 3D API allows ~500 requests/day — library data is cached between visits.
+        in the local SQLite database, and stay saved after a failed connect or a disconnect until you forget them. The Cults 3D API allows ~500 requests/day — library data is cached between visits.
       </div>
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>

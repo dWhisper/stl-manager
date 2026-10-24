@@ -55,6 +55,7 @@ export const api = {
     cults: {
       connect:    (body)          => req('POST',   '/integrations/cults3d', body),
       disconnect: ()              => req('DELETE', '/integrations/cults3d'),
+      forget:     ()              => req('DELETE', '/integrations/cults3d?forget=1'),
       profile:    ()              => req('GET',    '/integrations/cults3d/profile'),
       library:    (p = {})        => req('GET',    `/integrations/cults3d/library?${new URLSearchParams(p)}`),
       search:     (q, p = {})     => req('GET',    `/integrations/cults3d/search?q=${encodeURIComponent(q)}&${new URLSearchParams(p)}`),
@@ -64,6 +65,7 @@ export const api = {
     mmf: {
       connect:    (body)          => req('POST',   '/integrations/myminifactory', body),
       disconnect: ()              => req('DELETE', '/integrations/myminifactory'),
+      forget:     ()              => req('DELETE', '/integrations/myminifactory?forget=1'),
       profile:    ()              => req('GET',    '/integrations/myminifactory/profile'),
       library:    (p = {})        => req('GET',    `/integrations/myminifactory/library?${new URLSearchParams(p)}`),
       search:     (q, p = {})     => req('GET',    `/integrations/myminifactory/search?q=${encodeURIComponent(q)}&${new URLSearchParams(p)}`),

@@ -1,28 +1,23 @@
 // MyMiniFactory REST API v2 — https://www.myminifactory.com/api-doc/
-// Auth: HTTP Basic (username:api_key) for user-specific endpoints;
-//       ?key=api_key query param also supported for public endpoints.
+// Auth: ?key=api_key query param. The private endpoints (e.g. GET /user) need an
+//       OAuth2 access token instead, so only key-capable endpoints are used here.
 
 const BASE = 'https://www.myminifactory.com/api/v2';
 
-function authHeader(username, apiKey) {
-  return 'Basic ' + Buffer.from(`${username}:${apiKey}`).toString('base64');
-}
-
 async function req(username, apiKey, path, params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  const url = `${BASE}${path}${qs ? '?' + qs : ''}`;
+  const qs = new URLSearchParams({ ...params, key: apiKey }).toString();
+  const url = `${BASE}${path}?${qs}`;
 
   const res = await fetch(url, {
-    headers: {
-      Authorization: authHeader(username, apiKey),
-      Accept: 'application/json',
-    },
+    headers: { Accept: 'application/json' },
     signal: AbortSignal.timeout(15_000),
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`MMF API ${res.status}: ${text}`);
+    // Pass auth failures through as 401 so they aren't reported as a 502
+    const status = res.status === 401 || res.status === 403 ? 401 : undefined;
+    throw Object.assign(new Error(`MMF API ${res.status}: ${text}`), { status });
   }
 
   return res.json();
@@ -31,8 +26,8 @@ async function req(username, apiKey, path, params = {}) {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export async function getProfile(username, apiKey) {
-  // GET /user returns the authenticated user's private profile
-  return req(username, apiKey, '/user');
+  // GET /user needs OAuth2; the public profile accepts an API key and also verifies it
+  return req(username, apiKey, `/users/${encodeURIComponent(username)}`);
 }
 
 export async function getUserObjects(username, apiKey, { page = 1, perPage = 24 } = {}) {

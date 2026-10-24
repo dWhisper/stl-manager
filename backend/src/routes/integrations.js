@@ -8,7 +8,9 @@ const router = Router();
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function getCreds(platform) {
-  const row = getDb().prepare(`SELECT username, api_key FROM platform_credentials WHERE platform = ?`).get(platform);
+  const row = getDb().prepare(`
+    SELECT username, api_key FROM platform_credentials WHERE platform = ? AND profile_json IS NOT NULL
+  `).get(platform);
   if (!row) throw Object.assign(new Error(`${platform} not connected`), { status: 401 });
   return row;
 }
@@ -17,6 +19,47 @@ function saveProfile(platform, profile) {
   getDb().prepare(`
     UPDATE platform_credentials SET profile_json = ?, updated_at = datetime('now') WHERE platform = ?
   `).run(JSON.stringify(profile), platform);
+}
+
+// Saves the credentials before verifying them, so a failed check doesn't lose them.
+// A blank apiKey reuses the saved one.
+function connectRoute(platform, getProfile) {
+  return wrapAsync(async (req, res) => {
+    const db       = getDb();
+    const saved    = db.prepare(`SELECT api_key FROM platform_credentials WHERE platform = ?`).get(platform);
+    const username = req.body.username?.trim();
+    const apiKey   = req.body.apiKey?.trim() || saved?.api_key;
+    if (!username || !apiKey) {
+      return res.status(400).json({ error: 'username and apiKey are required' });
+    }
+
+    db.prepare(`
+      INSERT INTO platform_credentials (platform, username, api_key)
+      VALUES (?, ?, ?)
+      ON CONFLICT(platform) DO UPDATE SET
+        username     = excluded.username,
+        api_key      = excluded.api_key,
+        profile_json = NULL,
+        updated_at   = datetime('now')
+    `).run(platform, username, apiKey);
+
+    const profile = await getProfile(username, apiKey);
+    saveProfile(platform, profile);
+    res.json({ ok: true, profile });
+  });
+}
+
+// Disconnecting keeps the saved key; ?forget=1 deletes it too
+function disconnectRoute(platform) {
+  return (req, res) => {
+    const db = getDb();
+    if (req.query.forget) {
+      db.prepare(`DELETE FROM platform_credentials WHERE platform = ?`).run(platform);
+    } else {
+      db.prepare(`UPDATE platform_credentials SET profile_json = NULL, updated_at = datetime('now') WHERE platform = ?`).run(platform);
+    }
+    res.json({ ok: true });
+  };
 }
 
 function wrapAsync(fn) {
@@ -31,7 +74,8 @@ router.get('/', (req, res) => {
   const db   = getDb();
   const rows = db.prepare(`SELECT platform, username, profile_json, connected_at, updated_at FROM platform_credentials`).all();
   const byPlatform = Object.fromEntries(rows.map((r) => [r.platform, {
-    connected: true,
+    connected: r.profile_json != null,
+    saved: true,
     username: r.username,
     profile: r.profile_json ? JSON.parse(r.profile_json) : null,
     connectedAt: r.connected_at,
@@ -47,33 +91,9 @@ router.get('/', (req, res) => {
 // CULTS 3D
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.post('/cults3d', wrapAsync(async (req, res) => {
-  const { username, apiKey } = req.body;
-  if (!username?.trim() || !apiKey?.trim()) {
-    return res.status(400).json({ error: 'username and apiKey are required' });
-  }
+router.post('/cults3d', connectRoute('cults3d', cults.getProfile));
 
-  // Verify credentials by fetching profile
-  const profile = await cults.getProfile(username.trim(), apiKey.trim());
-
-  const db = getDb();
-  db.prepare(`
-    INSERT INTO platform_credentials (platform, username, api_key, profile_json)
-    VALUES ('cults3d', ?, ?, ?)
-    ON CONFLICT(platform) DO UPDATE SET
-      username     = excluded.username,
-      api_key      = excluded.api_key,
-      profile_json = excluded.profile_json,
-      updated_at   = datetime('now')
-  `).run(username.trim(), apiKey.trim(), JSON.stringify(profile));
-
-  res.json({ ok: true, profile });
-}));
-
-router.delete('/cults3d', (req, res) => {
-  getDb().prepare(`DELETE FROM platform_credentials WHERE platform = 'cults3d'`).run();
-  res.json({ ok: true });
-});
+router.delete('/cults3d', disconnectRoute('cults3d'));
 
 router.get('/cults3d/profile', wrapAsync(async (req, res) => {
   const { username, api_key } = getCreds('cults3d');
@@ -113,32 +133,9 @@ router.get('/cults3d/creation/:slug(*)', wrapAsync(async (req, res) => {
 // MY MINI FACTORY
 // ═══════════════════════════════════════════════════════════════════════════════
 
-router.post('/myminifactory', wrapAsync(async (req, res) => {
-  const { username, apiKey } = req.body;
-  if (!username?.trim() || !apiKey?.trim()) {
-    return res.status(400).json({ error: 'username and apiKey are required' });
-  }
+router.post('/myminifactory', connectRoute('myminifactory', mmf.getProfile));
 
-  const profile = await mmf.getProfile(username.trim(), apiKey.trim());
-
-  const db = getDb();
-  db.prepare(`
-    INSERT INTO platform_credentials (platform, username, api_key, profile_json)
-    VALUES ('myminifactory', ?, ?, ?)
-    ON CONFLICT(platform) DO UPDATE SET
-      username     = excluded.username,
-      api_key      = excluded.api_key,
-      profile_json = excluded.profile_json,
-      updated_at   = datetime('now')
-  `).run(username.trim(), apiKey.trim(), JSON.stringify(profile));
-
-  res.json({ ok: true, profile });
-}));
-
-router.delete('/myminifactory', (req, res) => {
-  getDb().prepare(`DELETE FROM platform_credentials WHERE platform = 'myminifactory'`).run();
-  res.json({ ok: true });
-});
+router.delete('/myminifactory', disconnectRoute('myminifactory'));
 
 router.get('/myminifactory/profile', wrapAsync(async (req, res) => {
   const { username, api_key } = getCreds('myminifactory');
