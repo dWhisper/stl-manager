@@ -9,6 +9,8 @@ import originsRouter from './routes/origins.js';
 import searchRouter       from './routes/search.js';
 import integrationsRouter from './routes/integrations.js';
 import libraryRouter      from './routes/library.js';
+import reconcileRouter    from './routes/reconcile.js';
+import linksRouter        from './routes/links.js';
 import { startWatcher, getWatcherStatus, reconcile } from './services/scanner.js';
 import { queueAll, getPendingCount } from './services/thumbnailer.js';
 import { folderTree } from './services/library.js';
@@ -26,6 +28,8 @@ app.use('/api/origins', originsRouter);
 app.use('/api/search',       searchRouter);
 app.use('/api/integrations', integrationsRouter);
 app.use('/api/library',      libraryRouter);
+app.use('/api/reconcile',    reconcileRouter);
+app.use('/api/links',        linksRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 

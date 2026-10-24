@@ -5,6 +5,7 @@ import { formatCount } from '../utils/format.js';
 import { FileCard, cardStyles } from './FileCard.jsx';
 import { Breadcrumbs, VariantChips } from './LibraryBrowser.jsx';
 import { useThumbPolling } from '../hooks/useThumbPolling.js';
+import ModelLinks from './ModelLinks.jsx';
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
@@ -101,6 +102,7 @@ export default function ModelView({ path, onNavigate, onSelect }) {
                 active={variant}
                 onToggle={(v) => setVariant(variant === v ? null : v)}
               />
+              <ModelLinks path={current.path} />
             </div>
 
             <div style={s.sections}>

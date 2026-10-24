@@ -79,6 +79,59 @@ export async function getLibrary(username, apiKey, { limit = 24, offset = 0 } = 
   return { ordersCount: batch?.total ?? orders.length, orders };
 }
 
+// Every order line, newest first, with what reconciliation needs: the download
+// link and the creation's file names
+export async function getAllPurchases(username, apiKey, { pageSize = 50, onProgress } = {}) {
+  const lines = [];
+  for (let offset = 0, total = Infinity; offset < total; offset += pageSize) {
+    const started = Date.now();
+    const data = await gql(username, apiKey, `
+      query($limit: Int!, $offset: Int!) {
+        myself {
+          ordersBatch(limit: $limit, offset: $offset) {
+            total
+            results {
+              createdAt
+              lines {
+                downloadUrl(locale: EN)
+                creation {
+                  slug
+                  name(locale: EN)
+                  url(locale: EN)
+                  thumbnailUrl: illustrationImageUrl
+                  creator { nick }
+                  blueprints { fileName }
+                }
+              }
+            }
+          }
+        }
+      }
+    `, { limit: pageSize, offset });
+    const batch = data.myself.ordersBatch;
+    total = batch.total;
+    console.log(`Cults sync: orders ${offset + batch.results.length}/${total} (${Date.now() - started}ms)`);
+    onProgress?.(offset + batch.results.length, total);
+    if (!batch.results.length) break;
+    for (const order of batch.results) {
+      for (const line of order.lines ?? []) {
+        const c = line.creation;
+        lines.push({
+          externalId:   c.slug,
+          name:         c.name,
+          creator:      c.creator?.nick ?? null,
+          url:          c.url,
+          downloadUrl:  line.downloadUrl,
+          thumbnailUrl: c.thumbnailUrl,
+          fileNames:    (c.blueprints ?? []).map((b) => b.fileName),
+          purchasedAt:  order.createdAt,
+        });
+      }
+    }
+  }
+  return lines;
+}
+
 export async function getCreation(slug, username, apiKey) {
   const data = await gql(username, apiKey, `
     query($slug: String!) {

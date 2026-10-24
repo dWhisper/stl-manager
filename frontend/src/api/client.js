@@ -40,6 +40,23 @@ export const api = {
     folder: (path, params = {}) => req('GET', `/library/folder?${new URLSearchParams({ path, ...params })}`),
     model:  (path)              => req('GET', `/library/model?${new URLSearchParams({ path })}`),
     tree:   (path)              => req('GET', `/library/tree?${new URLSearchParams({ path })}`),
+    find:   (q)                 => req('GET', `/library/find?${new URLSearchParams({ q })}`),
+  },
+  // Where a library folder or model came from
+  links: {
+    list:   (path)              => req('GET', `/links?${new URLSearchParams({ path })}`),
+    create: (body)              => req('POST', '/links', body),
+    update: (id, body)          => req('PATCH', `/links/${id}`, body),
+    delete: (id)                => req('DELETE', `/links/${id}`),
+  },
+  // Purchases on a platform matched against the library
+  reconcile: {
+    get:     (platform)                   => req('GET',    `/reconcile/${platform}`),
+    sync:    (platform)                   => req('POST',   `/reconcile/${platform}/sync`),
+    link:    (platform, externalId, path) => req('POST',   `/reconcile/${platform}/${encodeURIComponent(externalId)}/link`, { path }),
+    unlink:  (platform, externalId)       => req('DELETE', `/reconcile/${platform}/${encodeURIComponent(externalId)}/link`),
+    reject:  (platform, externalId, path) => req('POST',   `/reconcile/${platform}/${encodeURIComponent(externalId)}/reject`, { path }),
+    ignore:  (platform, externalId, ignored) => req('POST', `/reconcile/${platform}/${encodeURIComponent(externalId)}/ignore`, { ignored }),
   },
   search: {
     query: (q) => req('GET', `/search?q=${encodeURIComponent(q)}`),

@@ -81,6 +81,54 @@ function migrate(db) {
     );
   `);
 
+  db.exec(`
+    -- Items bought or downloaded on a platform, refreshed by a sync
+    CREATE TABLE IF NOT EXISTS purchases (
+      platform      TEXT NOT NULL,
+      external_id   TEXT NOT NULL,
+      name          TEXT NOT NULL,
+      creator       TEXT,
+      url           TEXT,
+      download_url  TEXT,
+      thumbnail_url TEXT,
+      file_names    TEXT,               -- JSON array of the item's file names
+      purchased_at  TEXT,
+      ignored       INTEGER NOT NULL DEFAULT 0,
+      synced_at     TEXT DEFAULT (datetime('now')),
+      PRIMARY KEY (platform, external_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS platform_sync (
+      platform  TEXT PRIMARY KEY,
+      synced_at TEXT,
+      total     INTEGER,
+      error     TEXT
+    );
+
+    -- Links from a library folder or model (its path in the library index) to
+    -- where it came from. external_id is set when the link is to a synced purchase.
+    CREATE TABLE IF NOT EXISTS model_links (
+      id              TEXT PRIMARY KEY,
+      model_path      TEXT NOT NULL,
+      source          TEXT NOT NULL,
+      external_id     TEXT,
+      url             TEXT,
+      external_name   TEXT,
+      external_author TEXT,
+      created_at      TEXT DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_model_links_path ON model_links(model_path);
+    CREATE INDEX IF NOT EXISTS idx_model_links_external ON model_links(source, external_id);
+
+    -- Suggested matches the user said were wrong, so they aren't suggested again
+    CREATE TABLE IF NOT EXISTS match_rejections (
+      platform    TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      model_path  TEXT NOT NULL,
+      PRIMARY KEY (platform, external_id, model_path)
+    );
+  `);
+
   // Additive column migrations — safe to run on existing DBs
   const cols = db.pragma('table_info(files)').map((c) => c.name);
   if (!cols.includes('zip_source')) db.exec(`ALTER TABLE files ADD COLUMN zip_source TEXT`);

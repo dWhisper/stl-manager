@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { getDb } from '../db/schema.js';
-import { listFolder, getModel, folderTree } from '../services/library.js';
+import { listFolder, getModel, folderTree, findNodes } from '../services/library.js';
 import { prioritizeThumbnails } from '../services/thumbnailer.js';
 import { formatFile } from './files.js';
 
@@ -56,6 +56,11 @@ router.get('/tree', (req, res) => {
   const children = folderTree(req.query.path ?? '');
   if (!children) return res.status(404).json({ error: 'Folder not found' });
   res.json(children);
+});
+
+// Folders and models by name, for picking a link target
+router.get('/find', (req, res) => {
+  res.json(findNodes(req.query.q ?? '', Math.min(Number(req.query.limit) || 20, 100)));
 });
 
 export default router;

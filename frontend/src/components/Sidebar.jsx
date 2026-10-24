@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Tag, FolderOpen, RefreshCw, Plus, Loader, Plug, Library, Files, ChevronRight, Folder, FolderArchive } from 'lucide-react';
+import { Tag, FolderOpen, RefreshCw, Plus, Loader, Plug, Library, Files, ChevronRight, Folder, FolderArchive, ShoppingBag } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import { formatCount } from '../utils/format.js';
@@ -188,6 +188,14 @@ export default function Sidebar({ filter, setFilter, view, setView }) {
           <span style={{ flex: 1 }}>Library</span>
         </div>
         {navItem('All Files', 'all', <Files size={14} />, 'view')}
+        <div
+          style={{ ...s.item, ...(view === 'purchases' ? s.itemActive : {}) }}
+          onClick={() => setView('purchases')}
+          title="Your purchases on Cults 3D, checked against the library"
+        >
+          <ShoppingBag size={14} />
+          <span style={{ flex: 1 }}>Purchases</span>
+        </div>
       </div>
 
       <button style={s.reconcileBtn} onClick={reconcile} disabled={reconciling} title="Remove DB entries for files no longer on disk">

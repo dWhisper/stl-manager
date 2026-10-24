@@ -51,6 +51,7 @@ function buildIndex() {
   const rows = getDb().prepare(`SELECT id, path, name, size, zip_source, zip_entry FROM files`).all();
   const root  = newNode('', 'Library', null);
   const nodes = new Map([['', root]]);
+  const modelOf = new Map();  // file id -> path of the model it folds into
 
   for (const row of rows) {
     const segs = logicalPath(row).split('/').filter(Boolean);
@@ -74,6 +75,7 @@ function buildIndex() {
     const folded = [];
     while (depth > Math.max(1, zipDepth) && isFoldable(dirs[depth - 1])) folded.unshift(dirs[--depth]);
     const model = nodes.get(dirs.slice(0, depth).join('/'));
+    modelOf.set(row.id, model.path);
 
     const sub = folded.join('/');
     const supported = /support/i.test(`${sub}/${row.name}`) && !/(un|no)[ _-]?support/i.test(`${sub}/${row.name}`);
@@ -97,7 +99,7 @@ function buildIndex() {
   })(root);
 
   console.log(`Library index: ${nodes.size} folders, ${root.modelCount} models (${Date.now() - started}ms)`);
-  return { root, nodes };
+  return { root, nodes, modelOf };
 }
 
 function getIndex() {
@@ -236,6 +238,47 @@ export function folderTree(folderPath) {
     path: c.path, name: c.name, isZip: c.isZip, modelCount: c.modelCount,
     hasChildren: c.sorted.some(isFolder),
   }));
+}
+
+// The whole index, for services that match against it (see reconcile.js).
+// A new object is returned whenever the library changes.
+export function libraryIndex() {
+  return getIndex();
+}
+
+// What a stored path points at now: a model, a folder of models, or null if it's gone
+export function describePath(nodePath) {
+  const node = getIndex().nodes.get(nodePath);
+  if (!node || !node.fileCount) return null;
+  const sole = soleModel(node);
+  const isModel = sole.files.length > 0 && sole.modelCount === 1;
+  return {
+    path: node.path, name: node.name.replace(/\.zip$/i, ''), isZip: node.isZip,
+    kind: isModel ? 'model' : 'folder',
+    modelCount: node.modelCount, fileCount: node.fileCount,
+    parent: node.parent?.path ? node.parent.path : null,
+  };
+}
+
+// Folders and models whose names share the most words with the query. At least
+// half the words must appear, so a whole purchase name still finds its folder.
+export function findNodes(query, limit = 20) {
+  const words = [...new Set(normalize(query).split(' ').filter((w) => w.length > 1))];
+  if (!words.length) return [];
+  const needed = Math.ceil(words.length / 2);
+  const hits = [];
+  for (const node of getIndex().nodes.values()) {
+    if (!node.path || !node.fileCount) continue;
+    const name = normalize(node.name);
+    const matched = words.filter((w) => name.includes(w)).length;
+    if (matched < needed) continue;
+    hits.push({ node, matched, length: name.length });
+  }
+  return hits
+    // Most words first; then shorter names and smaller subtrees
+    .sort((a, b) => b.matched - a.matched || a.length - b.length || a.node.modelCount - b.node.modelCount)
+    .slice(0, limit)
+    .map((h) => describePath(h.node.path));
 }
 
 export const _test = { isVariant, isFoldable, logicalPath };

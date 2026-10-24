@@ -5,6 +5,7 @@ import { formatCount } from '../utils/format.js';
 import { cardStyles, ThumbImage, ThumbSkeleton } from './FileCard.jsx';
 import Pagination, { usePageSize } from './Pagination.jsx';
 import { useThumbPolling } from '../hooks/useThumbPolling.js';
+import ModelLinks from './ModelLinks.jsx';
 
 const s = {
   wrapper: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 },
@@ -216,6 +217,12 @@ export default function LibraryBrowser({ path, onNavigate, onOpenModel }) {
           </span>
         )}
       </div>
+
+      {current?.path && (
+        <div style={{ padding: '0 16px 10px', borderBottom: '1px solid var(--border)' }}>
+          <ModelLinks path={current.path} />
+        </div>
+      )}
 
       <div style={s.grid} ref={gridRef}>
         {current?.items.map((item) => (
