@@ -1,0 +1,14 @@
+# Overrides for running directly on the UGREEN NAS (192.168.5.125), where the
+# STL library is local disk rather than an SMB mount.
+# Deploy from the Mac with:
+#   docker --context nas compose -f docker-compose.yml -f docker-compose.nas.yml up -d --build
+services:
+  backend:
+    environment:
+      # Local disk supports inotify, which is far cheaper than polling ~86k files.
+      CHOKIDAR_USEPOLLING: "false"
+    volumes: !override
+      - /volume1/docker/stl-manager/data:/data
+      - /volume1/3D Files:/nas:ro
+    # nginx in the frontend proxies /api, so the API doesn't need a host port.
+    ports: !reset []

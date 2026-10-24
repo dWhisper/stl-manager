@@ -7,6 +7,9 @@ import { scanZip, removeZipEntries } from './zipScanner.js';
 import { queueThumbnail, queueAll } from './thumbnailer.js';
 
 const STL_ROOT = process.env.STL_ROOT || '/nas';
+// Skip hidden files/dirs, NAS system dirs (@eaDir, @tmp, ...) and the UGOS/Synology
+// recycle bin and snapshots. Other "#" names are real folders (e.g. "#32 Sky Dominion").
+const IGNORED = /(^|[/\\])(\.|@|#(recycle|snapshot)([/\\]|$))/i;
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 const STL_EXTS = /\.(stl|3mf|obj)$/i;
 const ZIP_EXT  = /\.zip$/i;
@@ -23,11 +26,16 @@ function scheduleZipScan(zipPath) {
     zipPath,
     setTimeout(async () => {
       pendingZips.delete(zipPath);
-      const entries = await scanZip(zipPath);
-      console.log(`Indexed ${entries.length} STL(s) from ${path.basename(zipPath)}`);
-      // Queue thumbnails for newly discovered zip entries
-      for (const { id, thumbnail_path } of entries) {
-        if (!thumbnail_path) queueThumbnail(id);
+      try {
+        const entries = await scanZip(zipPath);
+        console.log(`Indexed ${entries.length} STL(s) from ${path.basename(zipPath)}`);
+        // Queue thumbnails for newly discovered zip entries
+        for (const { id, thumbnail_path } of entries) {
+          if (!thumbnail_path) queueThumbnail(id);
+        }
+      } catch (err) {
+        // One bad zip shouldn't take down the whole server
+        console.error(`Failed to index zip ${zipPath}: ${err.message}`);
       }
     }, 1000)
   );
@@ -75,7 +83,7 @@ export function startWatcher(onReady) {
     // Wait for writes to settle — critical for large zips being copied over the network.
     awaitWriteFinish: { stabilityThreshold: 3000, pollInterval: 500 },
     depth: Infinity,
-    ignored: /(^|[/\\])\./, // skip hidden files/dirs
+    ignored: IGNORED,
     usePolling,
     interval: pollInterval,
   });
@@ -122,7 +130,8 @@ export function getWatcherStatus() {
   return { watching: !!watcher, ready: watcherReady, indexed: total, zipped: zipped ?? 0, root: STL_ROOT };
 }
 
-// Reconcile: remove DB rows whose source no longer exists on disk.
+// Reconcile: remove DB rows whose source no longer exists on disk, or now
+// falls under an ignored path (e.g. indexed before the NAS recycle bin was excluded).
 // For zip entries, checks the zip file; for direct files, checks the file itself.
 export function reconcile() {
   const db = getDb();
@@ -132,7 +141,7 @@ export function reconcile() {
   db.transaction(() => {
     for (const row of rows) {
       const checkPath = row.zip_source ?? row.path;
-      if (!fs.existsSync(checkPath)) {
+      if (IGNORED.test(checkPath) || !fs.existsSync(checkPath)) {
         remove.run(row.id);
         removed++;
       }

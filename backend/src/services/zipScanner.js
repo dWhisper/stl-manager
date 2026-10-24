@@ -31,7 +31,7 @@ export async function scanZip(zipPath) {
     directory = await unzipper.Open.file(zipPath);
   } catch (err) {
     console.warn(`Skipping invalid zip ${zipPath}: ${err.message}`);
-    return 0;
+    return [];
   }
 
   const stlEntries = directory.files.filter(
@@ -61,12 +61,14 @@ export async function scanZip(zipPath) {
     for (const entry of stlEntries) {
       const virtualPath = encodeZipPath(zipPath, entry.path);
       seenPaths.add(virtualPath);
+      // unzipper exposes the parsed Date as lastModifiedDateTime; lastModifiedDate is the raw DOS value.
+      const modified = entry.lastModifiedDateTime;
       const row = upsert.get({
         id: randomUUID(),
         path: virtualPath,
         name: path.basename(entry.path),
         size: entry.uncompressedSize ?? null,
-        modified_at: entry.lastModifiedDate?.toISOString() ?? new Date().toISOString(),
+        modified_at: (modified instanceof Date && !isNaN(modified) ? modified : new Date()).toISOString(),
         zip_source: zipPath,
         zip_entry: entry.path,
       });
