@@ -182,6 +182,50 @@ docker compose logs -f
 docker compose logs -f backend
 ```
 
+### HTTPS on the local network
+
+Browsers warn about any self-signed certificate they haven't been told to trust. To avoid that, `scripts/make-certs.sh` creates a small private certificate authority (CA) and uses it to sign the server's certificate. Install the CA on each device once, and the site loads with no warnings.
+
+**1. Make the certificates** (on the machine you deploy from). List every address you'll type into the browser:
+
+```bash
+scripts/make-certs.sh 192.168.5.125 nas.local
+```
+
+With no arguments it uses `192.168.5.125 localhost 127.0.0.1`. This writes the following to `certs/` (git ignores it):
+
+| File | What it is |
+|---|---|
+| `ca.crt` | The CA certificate. Install this on your devices. |
+| `ca.key` | The CA private key. Keep it private and never copy it to the NAS. |
+| `server.crt` / `server.key` | The certificate and key nginx serves. |
+
+The server certificate lasts 825 days, the longest Apple devices accept. To renew it, or to add an address, run the script again. It keeps the existing CA, so you don't have to reinstall anything on your devices.
+
+**2. Copy the server cert to the NAS and deploy.** Run these on the machine that has the `nas` Docker context. The first command copies the files through the Docker API, so it doesn't need SSH:
+
+```bash
+tar -C certs -c server.crt server.key | docker --context nas run --rm -i \
+  -v /volume1/docker/stl-manager/certs:/certs alpine tar -x -C /certs
+
+CERT_DIR=/volume1/docker/stl-manager/certs \
+docker --context nas compose -f docker-compose.yml -f docker-compose.nas.yml \
+  -f docker-compose.https.yml up -d --build
+```
+
+The app is then at **https://192.168.5.125:8443**. Plain HTTP on port 8080 redirects to it. To use other ports, set `HTTP_PORT` and `HTTPS_PORT`. To run with HTTPS on the local machine instead, leave out `CERT_DIR` and the NAS file. The certs are then read from `./certs`.
+
+**3. Trust `certs/ca.crt` on each device:**
+
+- **macOS:** Double-click `ca.crt` to add it to the **System** keychain. In Keychain Access, open *STL Manager Local CA*, expand **Trust** and set it to **Always Trust**.
+- **Windows:** Double-click `ca.crt`, then choose **Install Certificate → Local Machine → Place all certificates in the following store → Trusted Root Certification Authorities**.
+- **iOS / iPadOS:** AirDrop or email `ca.crt` to the device and open it. Install the profile under **Settings → General → VPN & Device Management**. Then turn it on under **Settings → General → About → Certificate Trust Settings**.
+- **Android:** Go to **Settings → Security → More security settings → Encryption & credentials → Install a certificate → CA certificate** and pick `ca.crt`. Menu names vary between phone makers.
+- **Arch / CachyOS:** `sudo trust anchor --store certs/ca.crt`
+- **Firefox** keeps its own list of trusted certificates. Either import `ca.crt` under **Settings → Privacy & Security → View Certificates → Authorities → Import** and tick *websites*, or set `security.enterprise_roots.enabled` to `true` in `about:config` so it uses the system's list.
+
+Restart the browser afterwards. Chrome, Edge and Safari use the system's list.
+
 ---
 
 ## 4. File watching and indexing

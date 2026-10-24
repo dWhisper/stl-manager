@@ -1,0 +1,18 @@
+# Used when NGINX_ENVSUBST_TEMPLATE_DIR points at /etc/nginx/templates-https
+# (see docker-compose.https.yml). ${HTTPS_PORT} is the port on the host.
+server {
+    listen 80;
+    return 301 https://$host:${HTTPS_PORT}$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+
+    ssl_certificate     /etc/nginx/certs/server.crt;
+    ssl_certificate_key /etc/nginx/certs/server.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:SSL:10m;
+
+    include /etc/nginx/stl-manager/app-locations.conf;
+}

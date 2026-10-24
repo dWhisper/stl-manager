@@ -1,0 +1,17 @@
+# Serve the UI over HTTPS using certs made by scripts/make-certs.sh.
+# Add this file after the others, e.g. on the NAS:
+#   CERT_DIR=/volume1/docker/stl-manager/certs \
+#   docker --context nas compose -f docker-compose.yml -f docker-compose.nas.yml \
+#     -f docker-compose.https.yml up -d --build
+# Plain HTTP on HTTP_PORT redirects to HTTPS_PORT.
+services:
+  frontend:
+    environment:
+      NGINX_ENVSUBST_TEMPLATE_DIR: /etc/nginx/templates-https
+      HTTPS_PORT: ${HTTPS_PORT:-8443}
+    ports: !override
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    volumes:
+      # Must hold server.crt and server.key. CERT_DIR is a path on the Docker host.
+      - ${CERT_DIR:-./certs}:/etc/nginx/certs:ro
