@@ -1,6 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Box, FileBox, FileArchive } from 'lucide-react';
 import { api } from '../api/client.js';
+import { formatCount } from '../utils/format.js';
+
+const PAGE_SIZES = [48, 96, 192, 384];
+const PAGE_SIZE_KEY = 'stl-manager.pageSize';
+
+function initialPageSize() {
+  try {
+    const saved = Number(localStorage.getItem(PAGE_SIZE_KEY));
+    if (PAGE_SIZES.includes(saved)) return saved;
+  } catch { /* storage unavailable */ }
+  return 96;
+}
 
 const s = {
   wrapper: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
@@ -10,7 +22,10 @@ const s = {
   },
   grid: {
     flex: 1, overflowY: 'auto', padding: 16,
-    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 12,
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 14,
+    // Without these, rows shrink to fit the viewport (cards have overflow:hidden,
+    // so their min height is 0) and every card collapses into a thin bar.
+    gridAutoRows: 'max-content', alignContent: 'start',
   },
   card: {
     background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
@@ -18,13 +33,20 @@ const s = {
   },
   cardHover: { borderColor: 'var(--accent)', transform: 'translateY(-1px)' },
   cardThumb: {
-    height: 140, background: 'var(--surface2)', display: 'flex',
+    aspectRatio: '1 / 1', background: 'var(--surface2)', display: 'flex',
     alignItems: 'center', justifyContent: 'center', color: 'var(--accent)',
     overflow: 'hidden', position: 'relative',
   },
+  noPreview: {
+    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
+    color: 'var(--text-dim)', fontSize: 11,
+  },
   thumbImg: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   cardBody: { padding: '8px 10px 10px' },
-  cardName: { fontSize: 12, fontWeight: 500, color: 'var(--text)', wordBreak: 'break-word' },
+  cardName: {
+    fontSize: 12, fontWeight: 500, color: 'var(--text)', wordBreak: 'break-word',
+    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+  },
   cardMeta: { fontSize: 10, color: 'var(--text-dim)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 },
   tags: { display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 6 },
   tag: { fontSize: 10, padding: '1px 5px', borderRadius: 4, color: '#fff', fontWeight: 500 },
@@ -36,6 +58,11 @@ const s = {
   pgBtn: {
     padding: '4px 10px', background: 'var(--surface2)', border: '1px solid var(--border)',
     color: 'var(--text)', borderRadius: 'var(--radius)', cursor: 'pointer', fontSize: 12,
+  },
+  pgGroup: { display: 'flex', alignItems: 'center', gap: 6 },
+  pgSelect: {
+    padding: '3px 6px', background: 'var(--surface2)', border: '1px solid var(--border)',
+    color: 'var(--text)', borderRadius: 'var(--radius)', fontSize: 12,
   },
 };
 
@@ -67,11 +94,16 @@ function CardThumb({ file }) {
   const Icon = file.inZip ? FileArchive : FileBox;
 
   if (!hasThumbnail) return (
-    <div style={s.cardThumb}>
-      {/* Show skeleton for STL files (thumbnail will arrive), icon for others */}
-      {file.name.toLowerCase().endsWith('.stl')
+    <div style={s.cardThumb} title={file.thumbError ? `No preview: ${file.thumbError}` : undefined}>
+      {/* Skeleton while an STL thumbnail is on its way; icon for failures and other formats */}
+      {file.name.toLowerCase().endsWith('.stl') && !file.thumbError
         ? <ThumbSkeleton />
-        : <Icon size={40} strokeWidth={1} color="var(--text-dim)" />}
+        : (
+          <div style={s.noPreview}>
+            <Icon size={40} strokeWidth={1} />
+            {file.thumbError && <span>No preview</span>}
+          </div>
+        )}
     </div>
   );
 
@@ -80,7 +112,7 @@ function CardThumb({ file }) {
       {!loaded && !errored && <ThumbSkeleton />}
       {errored && <Icon size={40} strokeWidth={1} color="var(--text-dim)" />}
       <img
-        src={api.files.thumbUrl(file.id)}
+        src={api.files.thumbUrl(file.id, file.updatedAt)}
         alt=""
         style={{ ...s.thumbImg, display: loaded && !errored ? 'block' : 'none' }}
         onLoad={() => setLoaded(true)}
@@ -97,13 +129,23 @@ export default function FileGrid({ filter, onSelect }) {
   const [hover, setHover]   = useState(null);
   const [loading, setLoading] = useState(false);
   const [pendingThumbs, setPendingThumbs] = useState(0);
-  const pollRef = useRef(null);
-  const LIMIT = 48;
+  const [pageSize, setPageSize] = useState(initialPageSize);
+  const pollRef  = useRef(null);
+  const gridRef  = useRef(null);
+  const filesRef = useRef(files);
+  filesRef.current = files;
+
+  function changePageSize(size) {
+    try { localStorage.setItem(PAGE_SIZE_KEY, String(size)); } catch { /* storage unavailable */ }
+    // Keep the first visible tile on screen when the page size changes
+    setPage(Math.floor(((page - 1) * pageSize) / size) + 1);
+    setPageSize(size);
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { page, limit: LIMIT };
+      const params = { page, limit: pageSize };
       if (filter.tag)        params.tag        = filter.tag;
       if (filter.collection) params.collection = filter.collection;
       const res = await api.files.list(params);
@@ -112,10 +154,11 @@ export default function FileGrid({ filter, onSelect }) {
     } finally {
       setLoading(false);
     }
-  }, [page, filter]);
+  }, [page, pageSize, filter]);
 
   useEffect(() => { setPage(1); }, [filter]);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { gridRef.current?.scrollTo(0, 0); }, [page, pageSize, filter]);
 
   // Check pending thumbnail count from the watcher status endpoint.
   // While thumbnails are generating, poll every 4s and refresh the grid
@@ -125,10 +168,11 @@ export default function FileGrid({ filter, onSelect }) {
       try {
         const s = await api.watcher.status();
         setPendingThumbs(s.thumbPending ?? 0);
-        if ((s.thumbPending ?? 0) > 0) {
-          // Re-fetch current page so cards with freshly-generated thumbs update
-          load();
-        }
+        // Re-fetch the current page only while some of its STL cards still lack a thumbnail
+        const pageMissing = filesRef.current.some(
+          (f) => !f.thumbnailPath && !f.thumbError && f.name.toLowerCase().endsWith('.stl')
+        );
+        if ((s.thumbPending ?? 0) > 0 && pageMissing) load();
       } catch { /* ignore */ }
     }
 
@@ -137,29 +181,26 @@ export default function FileGrid({ filter, onSelect }) {
     pollRef.current = setInterval(checkPending, 4000);
     checkPending(); // immediate check
     return () => clearInterval(pollRef.current);
-  }, [filter, page]); // restart poll on navigation
+  }, [filter, page, pageSize]); // restart poll on navigation
 
-  // Stop polling once queue drains
-  useEffect(() => {
-    if (pendingThumbs === 0) clearInterval(pollRef.current);
-  }, [pendingThumbs]);
-
-  const totalPages = Math.ceil(total / LIMIT);
+  const totalPages = Math.ceil(total / pageSize);
+  const firstShown = total ? (page - 1) * pageSize + 1 : 0;
+  const lastShown  = Math.min(page * pageSize, total);
 
   return (
     <div style={s.wrapper}>
       <div style={s.toolbar}>
         <span style={{ fontSize: 12, color: 'var(--text-dim)', flex: 1 }}>
-          {loading ? 'Loading…' : `${total} files`}
+          {loading && !total ? 'Loading…' : `${formatCount(total)} files`}
         </span>
         {pendingThumbs > 0 && (
           <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-            Generating {pendingThumbs} thumbnail{pendingThumbs !== 1 ? 's' : ''}…
+            Generating {formatCount(pendingThumbs)} thumbnail{pendingThumbs !== 1 ? 's' : ''}…
           </span>
         )}
       </div>
 
-      <div style={s.grid}>
+      <div style={s.grid} ref={gridRef}>
         {files.map((f) => {
           const tagList = f.tag_names ? f.tag_names.split(',').filter(Boolean) : [];
           const tagColors = {};
@@ -179,7 +220,7 @@ export default function FileGrid({ filter, onSelect }) {
             >
               <CardThumb file={f} />
               <div style={s.cardBody}>
-                <div style={s.cardName}>{f.name}</div>
+                <div style={s.cardName} title={f.name}>{f.name}</div>
                 <div style={s.cardMeta}>
                   <span>{formatSize(f.size)}</span>
                   {f.inZip && (
@@ -206,11 +247,24 @@ export default function FileGrid({ filter, onSelect }) {
         )}
       </div>
 
-      {totalPages > 1 && (
+      {total > 0 && (
         <div style={s.pagination}>
-          <button style={s.pgBtn} disabled={page === 1}          onClick={() => setPage(p => p - 1)}>← Prev</button>
-          <span>Page {page} of {totalPages}</span>
-          <button style={s.pgBtn} disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
+          <span>
+            Showing {formatCount(firstShown)}–{formatCount(lastShown)} of {formatCount(total)}
+          </span>
+          <div style={s.pgGroup}>
+            <button style={s.pgBtn} disabled={page === 1}           onClick={() => setPage(1)}>« First</button>
+            <button style={s.pgBtn} disabled={page === 1}           onClick={() => setPage(p => p - 1)}>← Prev</button>
+            <span style={{ padding: '0 6px' }}>Page {formatCount(page)} of {formatCount(totalPages)}</span>
+            <button style={s.pgBtn} disabled={page >= totalPages}   onClick={() => setPage(p => p + 1)}>Next →</button>
+            <button style={s.pgBtn} disabled={page >= totalPages}   onClick={() => setPage(totalPages)}>Last »</button>
+          </div>
+          <label style={s.pgGroup}>
+            Tiles per page
+            <select style={s.pgSelect} value={pageSize} onChange={(e) => changePageSize(Number(e.target.value))}>
+              {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
         </div>
       )}
 

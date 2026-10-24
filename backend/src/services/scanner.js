@@ -9,7 +9,7 @@ import { queueThumbnail, queueAll } from './thumbnailer.js';
 const STL_ROOT = process.env.STL_ROOT || '/nas';
 // Skip hidden files/dirs, NAS system dirs (@eaDir, @tmp, ...) and the UGOS/Synology
 // recycle bin and snapshots. Other "#" names are real folders (e.g. "#32 Sky Dominion").
-const IGNORED = /(^|[/\\])(\.|@|#(recycle|snapshot)([/\\]|$))/i;
+const IGNORED = /(^|[/\\])(\.|@|__MACOSX([/\\]|$)|#(recycle|snapshot)([/\\]|$))/i;
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 const STL_EXTS = /\.(stl|3mf|obj)$/i;
 const ZIP_EXT  = /\.zip$/i;
@@ -30,8 +30,8 @@ function scheduleZipScan(zipPath) {
         const entries = await scanZip(zipPath);
         console.log(`Indexed ${entries.length} STL(s) from ${path.basename(zipPath)}`);
         // Queue thumbnails for newly discovered zip entries
-        for (const { id, thumbnail_path } of entries) {
-          if (!thumbnail_path) queueThumbnail(id);
+        for (const { id, thumbnail_path, thumb_error } of entries) {
+          if (!thumbnail_path && !thumb_error) queueThumbnail(id);
         }
       } catch (err) {
         // One bad zip shouldn't take down the whole server
@@ -61,11 +61,12 @@ export function startWatcher(onReady) {
           name        = excluded.name,
           size        = excluded.size,
           modified_at = excluded.modified_at,
+          thumb_error = CASE WHEN files.modified_at IS excluded.modified_at THEN files.thumb_error END,
           updated_at  = datetime('now')
-        RETURNING id, thumbnail_path
+        RETURNING id, thumbnail_path, thumb_error
       `).get({ id, path: filePath, name: path.basename(filePath), size: stat.size, modified_at: stat.mtime.toISOString() });
-      // Queue thumbnail only if not yet generated
-      if (row && !row.thumbnail_path) queueThumbnail(row.id);
+      // Queue thumbnail only if not yet generated and not known to fail
+      if (row && !row.thumbnail_path && !row.thumb_error) queueThumbnail(row.id);
     } catch {
       // file disappeared between event and stat — ignore
     }

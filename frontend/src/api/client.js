@@ -18,7 +18,8 @@ export const api = {
     addTag: (id, tagId) => req('POST', `/files/${id}/tags`, { tagId }),
     removeTag: (id, tagId) => req('DELETE', `/files/${id}/tags/${tagId}`),
     stlUrl:   (id) => `${BASE}/files/${id}/stl`,
-    thumbUrl: (id) => `${BASE}/files/${id}/thumb`,
+    // version busts the browser cache when a thumbnail is regenerated
+    thumbUrl: (id, version) => `${BASE}/files/${id}/thumb${version ? `?v=${encodeURIComponent(version)}` : ''}`,
     generateThumbs: () => req('POST', '/files/thumbs/generate'),
   },
   tags: {

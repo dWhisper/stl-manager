@@ -4,14 +4,15 @@ import path from 'path';
 import { getDb } from '../db/schema.js';
 import { getSiblingImages, getWatcherStatus } from '../services/scanner.js';
 import { extractToCache, decodeZipPath } from '../services/zipScanner.js';
-import { getPendingCount, queueAll } from '../services/thumbnailer.js';
+import { getPendingCount, queueAll, prioritizeThumbnails } from '../services/thumbnailer.js';
 
 const router = Router();
 const STL_ROOT = process.env.STL_ROOT || '/nas';
 
 router.get('/', (req, res) => {
   const db = getDb();
-  const { search, tag, collection, page = 1, limit = 48 } = req.query;
+  const { search, tag, collection, page = 1 } = req.query;
+  const limit  = Math.min(Math.max(Number(req.query.limit) || 48, 1), 500);
   const offset = (page - 1) * limit;
 
   let query = `
@@ -45,7 +46,12 @@ router.get('/', (req, res) => {
   const files = db.prepare(query).all(...params);
   const total = db.prepare(`SELECT COUNT(DISTINCT f.id) as n FROM files f ${where.length ? 'WHERE ' + where.join(' AND ') : ''}`).get(...params.slice(0, -2)).n;
 
-  res.json({ files: files.map(formatFile), total, page: Number(page), limit: Number(limit) });
+  // Thumbnails for the page being viewed go to the front of the queue
+  prioritizeThumbnails(
+    files.filter((f) => !f.thumbnail_path && !f.thumb_error && /\.stl$/i.test(f.zip_entry ?? f.name)).map((f) => f.id)
+  );
+
+  res.json({ files: files.map(formatFile), total, page: Number(page), limit });
 });
 
 router.get('/:id', (req, res) => {
@@ -67,13 +73,13 @@ router.get('/:id', (req, res) => {
 
 router.get('/:id/stl', async (req, res) => {
   const db = getDb();
-  const file = db.prepare(`SELECT path, zip_source, zip_entry FROM files WHERE id = ?`).get(req.params.id);
+  const file = db.prepare(`SELECT path, size, zip_source, zip_entry FROM files WHERE id = ?`).get(req.params.id);
   if (!file) return res.status(404).end();
 
   if (file.zip_source) {
     // Extract from zip to local cache on first access; serve from cache thereafter
     if (!fs.existsSync(file.zip_source)) return res.status(404).end();
-    const cachePath = await extractToCache(file.zip_source, file.zip_entry);
+    const cachePath = await extractToCache(file.zip_source, file.zip_entry, file.size);
     return res.sendFile(cachePath);
   }
 
@@ -134,7 +140,9 @@ function formatFile(f) {
     modifiedAt: f.modified_at,
     notes: f.notes,
     thumbnailPath: f.thumbnail_path,
+    thumbError: f.thumb_error ?? null,
     createdAt: f.created_at,
+    updatedAt: f.updated_at,
     inZip: !!f.zip_source,
     zipSource: f.zip_source ? path.basename(f.zip_source) : null,
   };

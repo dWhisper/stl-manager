@@ -9,7 +9,7 @@ import originsRouter from './routes/origins.js';
 import searchRouter       from './routes/search.js';
 import integrationsRouter from './routes/integrations.js';
 import { startWatcher, getWatcherStatus, reconcile } from './services/scanner.js';
-import { queueAll } from './services/thumbnailer.js';
+import { queueAll, getPendingCount } from './services/thumbnailer.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -26,7 +26,7 @@ app.use('/api/integrations', integrationsRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-app.get('/api/status', (req, res) => res.json(getWatcherStatus()));
+app.get('/api/status', (req, res) => res.json({ ...getWatcherStatus(), thumbPending: getPendingCount() }));
 
 // Manual reconcile: removes DB rows whose files no longer exist on disk.
 // The watcher handles new/changed files automatically; this cleans up edge cases

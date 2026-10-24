@@ -85,6 +85,8 @@ function migrate(db) {
   const cols = db.pragma('table_info(files)').map((c) => c.name);
   if (!cols.includes('zip_source')) db.exec(`ALTER TABLE files ADD COLUMN zip_source TEXT`);
   if (!cols.includes('zip_entry'))  db.exec(`ALTER TABLE files ADD COLUMN zip_entry TEXT`);
+  // Why the last thumbnail attempt failed; set means "don't retry until the file changes"
+  if (!cols.includes('thumb_error')) db.exec(`ALTER TABLE files ADD COLUMN thumb_error TEXT`);
   if (!cols.includes('zip_source')) return;
   db.exec(`CREATE INDEX IF NOT EXISTS idx_files_zip_source ON files(zip_source)`);
 }

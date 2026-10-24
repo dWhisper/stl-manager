@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { FileBox, FileArchive, AlertTriangle, Layers, ArrowLeftRight, Loader } from 'lucide-react';
 import { api } from '../api/client.js';
+import { formatCount } from '../utils/format.js';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -66,7 +67,7 @@ function FileRow({ file, onSelect, highlight }) {
     >
       {file.thumbnailPath && imgOk ? (
         <img
-          src={api.files.thumbUrl(file.id)}
+          src={api.files.thumbUrl(file.id, file.updatedAt)}
           alt=""
           style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 4, flexShrink: 0, border: '1px solid var(--border)' }}
           onError={() => setImgOk(false)}
@@ -219,7 +220,7 @@ export default function SearchResults({ query, onSelect }) {
           {loading
             ? 'Searching…'
             : data
-            ? `${data.total} result${data.total !== 1 ? 's' : ''} for "${data.query}"`
+            ? `${formatCount(data.total)} result${data.total !== 1 ? 's' : ''} for "${data.query}"`
             : ''}
         </span>
         {loading && <Loader size={13} color="var(--text-dim)" style={{ animation: 'spin 1s linear infinite' }} />}

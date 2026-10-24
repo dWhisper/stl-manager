@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Tag, FolderOpen, RefreshCw, Plus, Loader, Plug } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
+import { formatCount } from '../utils/format.js';
 
 const s = {
   sidebar: {
@@ -105,7 +106,7 @@ export default function Sidebar({ filter, setFilter, view, setView }) {
     ? 'Watcher stopped'
     : !ready
     ? 'Scanning…'
-    : `${status.indexed} files${status.zipped ? ` · ${status.zipped} in zips` : ''}`;
+    : `${formatCount(status.indexed)} files${status.zipped ? ` · ${formatCount(status.zipped)} in zips` : ''}`;
 
   return (
     <div style={s.sidebar}>
