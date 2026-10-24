@@ -3,3 +3,4 @@ data/
 .env
 dist/
 *.db
+.DS_Store
