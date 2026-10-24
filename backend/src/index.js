@@ -8,8 +8,10 @@ import collectionsRouter from './routes/collections.js';
 import originsRouter from './routes/origins.js';
 import searchRouter       from './routes/search.js';
 import integrationsRouter from './routes/integrations.js';
+import libraryRouter      from './routes/library.js';
 import { startWatcher, getWatcherStatus, reconcile } from './services/scanner.js';
 import { queueAll, getPendingCount } from './services/thumbnailer.js';
+import { folderTree } from './services/library.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -23,6 +25,7 @@ app.use('/api/collections', collectionsRouter);
 app.use('/api/origins', originsRouter);
 app.use('/api/search',       searchRouter);
 app.use('/api/integrations', integrationsRouter);
+app.use('/api/library',      libraryRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
@@ -48,5 +51,6 @@ app.listen(PORT, () => {
     console.log(`Initial index complete: ${count} files`);
     const queued = queueAll();
     if (queued) console.log(`Queued ${queued} thumbnail(s) for generation`);
+    folderTree('');  // build the library index now rather than on the first visit
   });
 });

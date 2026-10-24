@@ -26,18 +26,44 @@ function cachePathFor(zipSource, zipEntry) {
   return path.join(CACHE_DIR, key + path.extname(zipEntry).toLowerCase());
 }
 
-// yauzl handles ZIP64 (archives over 4 GB); unzipper 0.10 misread their entry offsets
+// yauzl handles ZIP64 (archives over 4 GB); unzipper 0.10 misread their entry offsets.
+// Its strict checks would reject a whole zip over one odd entry, so names are
+// validated per entry in walkEntries and extracted sizes are checked in extractToCache.
+const ZIP_OPTS = { lazyEntries: true, autoClose: false, decodeStrings: false, validateEntrySizes: false };
+
+class FileReader extends yauzl.RandomAccessReader {
+  constructor(filePath) {
+    super();
+    this.filePath = filePath;
+  }
+  _readStreamForRange(start, end) {
+    return fs.createReadStream(this.filePath, { start, end: end - 1 });
+  }
+}
+
 function openZip(zipPath) {
   return new Promise((resolve, reject) =>
-    yauzl.open(zipPath, { lazyEntries: true, autoClose: false }, (err, zip) => (err ? reject(err) : resolve(zip)))
+    yauzl.open(zipPath, ZIP_OPTS, (err, zip) => {
+      if (!err) return resolve(zip);
+      // Some tools pad a zip with bytes after its end record; retry as if the padding weren't there
+      const m = /Invalid comment length\. Expected: (\d+)\. Found: (\d+)/.exec(err.message);
+      const padding = m ? Number(m[1]) - Number(m[2]) : 0;
+      if (padding <= 0) return reject(err);
+      const size = fs.statSync(zipPath).size - padding;
+      yauzl.fromRandomAccessReader(new FileReader(zipPath), size, ZIP_OPTS, (err2, zip2) =>
+        (err2 ? reject(err2) : resolve(zip2))
+      );
+    })
   );
 }
 
-// Walk the central directory, stopping early when visit() returns true
+// Walk the central directory, stopping early when visit() returns true.
+// Entries with unsafe names (absolute paths, "..") are skipped rather than failing the zip.
 function walkEntries(zip, visit) {
   return new Promise((resolve, reject) => {
     zip.on('entry', (entry) => {
-      if (visit(entry)) resolve(entry);
+      entry.fileName = yauzl.getFileNameLowLevel(entry.generalPurposeBitFlag, entry.fileNameRaw, entry.extraFields, false);
+      if (!yauzl.validateFileName(entry.fileName) && visit(entry)) resolve(entry);
       else zip.readEntry();
     });
     zip.on('end', () => resolve(null));

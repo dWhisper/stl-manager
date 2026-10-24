@@ -131,7 +131,7 @@ router.delete('/:id/tags/:tagId', (req, res) => {
   res.json({ ok: true });
 });
 
-function formatFile(f) {
+export function formatFile(f) {
   return {
     id: f.id,
     path: f.path,
@@ -145,6 +145,8 @@ function formatFile(f) {
     updatedAt: f.updated_at,
     inZip: !!f.zip_source,
     zipSource: f.zip_source ? path.basename(f.zip_source) : null,
+    tag_names: f.tag_names ?? null,
+    tag_data: f.tag_data ?? null,
   };
 }
 

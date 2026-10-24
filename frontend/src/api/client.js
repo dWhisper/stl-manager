@@ -36,6 +36,11 @@ export const api = {
     addFile: (id, fileId) => req('POST', `/collections/${id}/files`, { fileId }),
     removeFile: (id, fileId) => req('DELETE', `/collections/${id}/files/${fileId}`),
   },
+  library: {
+    folder: (path, params = {}) => req('GET', `/library/folder?${new URLSearchParams({ path, ...params })}`),
+    model:  (path)              => req('GET', `/library/model?${new URLSearchParams({ path })}`),
+    tree:   (path)              => req('GET', `/library/tree?${new URLSearchParams({ path })}`),
+  },
   search: {
     query: (q) => req('GET', `/search?q=${encodeURIComponent(q)}`),
   },

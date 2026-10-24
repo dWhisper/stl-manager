@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Tag, FolderOpen, RefreshCw, Plus, Loader, Plug } from 'lucide-react';
+import { Tag, FolderOpen, RefreshCw, Plus, Loader, Plug, Library, Files, ChevronRight, Folder, FolderArchive } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import { formatCount } from '../utils/format.js';
 
 const s = {
   sidebar: {
-    width: 240, minWidth: 240, background: 'var(--surface)', borderRight: '1px solid var(--border)',
+    width: 260, minWidth: 260, background: 'var(--surface)', borderRight: '1px solid var(--border)',
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
   },
   status: {
@@ -38,6 +38,69 @@ const s = {
     borderRadius: 'var(--radius)', padding: '4px 8px', fontSize: 12, width: '100%', outline: 'none',
   },
 };
+
+// Lazily loaded folder tree; expands to follow the folder being viewed
+function FolderTree({ currentPath, onOpen }) {
+  const [children, setChildren] = useState({});      // path -> child folders
+  const [expanded, setExpanded] = useState(() => new Set(['']));
+
+  async function ensure(path) {
+    if (children[path]) return;
+    try {
+      const list = await api.library.tree(path);
+      setChildren((c) => ({ ...c, [path]: list }));
+    } catch { /* folder vanished; leave it collapsed */ }
+  }
+
+  useEffect(() => {
+    // Open every ancestor of the current folder
+    const parts = (currentPath ?? '').split('/').filter(Boolean);
+    const ancestors = parts.slice(0, -1).map((_, i) => parts.slice(0, i + 1).join('/'));
+    ['', ...ancestors].forEach(ensure);
+    setExpanded((e) => new Set([...e, '', ...ancestors]));
+  }, [currentPath]);
+
+  function toggle(path) {
+    ensure(path);
+    setExpanded((e) => {
+      const next = new Set(e);
+      next.has(path) ? next.delete(path) : next.add(path);
+      return next;
+    });
+  }
+
+  const render = (path, depth) => (children[path] ?? []).map((f) => {
+    const open = expanded.has(f.path) && children[f.path];
+    const active = currentPath === f.path;
+    const Icon = f.isZip ? FolderArchive : Folder;
+    return (
+      <div key={f.path}>
+        <div
+          style={{
+            ...s.item, padding: `4px 10px 4px ${10 + depth * 12}px`, gap: 4, fontSize: 12,
+            ...(active ? s.itemActive : {}),
+          }}
+          title={`${f.name} · ${f.modelCount.toLocaleString()} models`}
+          onClick={() => onOpen(f.path)}
+        >
+          <span
+            style={{ width: 14, display: 'flex', flexShrink: 0, visibility: f.hasChildren ? 'visible' : 'hidden' }}
+            onClick={(e) => { e.stopPropagation(); toggle(f.path); }}
+          >
+            <ChevronRight size={12} style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 0.1s' }} />
+          </span>
+          <Icon size={12} style={{ flexShrink: 0 }} />
+          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {f.name.replace(/\.zip$/i, '')}
+          </span>
+        </div>
+        {open && render(f.path, depth + 1)}
+      </div>
+    );
+  });
+
+  return <div>{render('', 0)}</div>;
+}
 
 export default function Sidebar({ filter, setFilter, view, setView }) {
   const [reconciling, setReconciling] = useState(false);
@@ -117,7 +180,14 @@ export default function Sidebar({ filter, setFilter, view, setView }) {
       </div>
 
       <div style={s.section}>
-        {navItem('All Files', 'all', <FolderOpen size={14} />, 'view')}
+        <div
+          style={{ ...s.item, ...(view === 'files' && filter.view === 'library' && !filter.path ? s.itemActive : {}) }}
+          onClick={() => setFilter({ view: 'library', path: '' })}
+        >
+          <Library size={14} />
+          <span style={{ flex: 1 }}>Library</span>
+        </div>
+        {navItem('All Files', 'all', <Files size={14} />, 'view')}
       </div>
 
       <button style={s.reconcileBtn} onClick={reconcile} disabled={reconciling} title="Remove DB entries for files no longer on disk">
@@ -125,7 +195,18 @@ export default function Sidebar({ filter, setFilter, view, setView }) {
         {reconcileMsg || 'Reconcile Library'}
       </button>
 
-      <div style={{ ...s.section, borderTop: '1px solid var(--border)', flex: 1, overflowY: 'auto' }}>
+      <div style={{ ...s.section, borderTop: '1px solid var(--border)', flex: 1, overflowY: 'auto', minHeight: 120 }}>
+        <div style={s.sectionHeader}>
+          <span>Folders</span>
+          <Folder size={11} />
+        </div>
+        <FolderTree
+          currentPath={filter.view === 'library' || filter.view === 'model' ? filter.path : null}
+          onOpen={(path) => setFilter({ view: 'library', path })}
+        />
+      </div>
+
+      <div style={{ ...s.section, borderTop: '1px solid var(--border)', maxHeight: '22vh', overflowY: 'auto' }}>
         <div style={s.sectionHeader}>
           <span>Tags</span>
           <Tag size={11} />
