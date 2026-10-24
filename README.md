@@ -54,12 +54,16 @@ sudo chmod 600 /etc/samba/nas-credentials
 Add a line to `/etc/fstab` so it mounts on boot:
 
 ```
-//192.168.1.100/STLFiles  /mnt/nas/stl  cifs  credentials=/etc/samba/nas-credentials,uid=1000,gid=1000,iocharset=utf8,_netdev  0  0
+//192.168.1.100/STLFiles  /mnt/nas/stl  cifs  credentials=/etc/samba/nas-credentials,uid=1000,gid=1000,iocharset=utf8,_netdev,nofail,x-systemd.automount  0  0
 ```
 
-Mount it now without rebooting:
+`nofail` and `x-systemd.automount` let the machine boot normally when the NAS is off. The share then mounts the first time something opens the folder. If the share name has a space in it, write the space as `\040`, e.g. `//192.168.1.100/3D\040Files`.
+
+Create the mount point and mount it now without rebooting:
 
 ```bash
+sudo mkdir -p /mnt/nas/stl
+sudo systemctl daemon-reload
 sudo mount -a
 ```
 
@@ -90,12 +94,16 @@ sudo chmod 600 /etc/samba/nas-credentials
 Add a line to `/etc/fstab` so it mounts on boot:
 
 ```
-//192.168.1.100/STLFiles  /mnt/nas/stl  cifs  credentials=/etc/samba/nas-credentials,uid=1000,gid=1000,iocharset=utf8,_netdev  0  0
+//192.168.1.100/STLFiles  /mnt/nas/stl  cifs  credentials=/etc/samba/nas-credentials,uid=1000,gid=1000,iocharset=utf8,_netdev,nofail,x-systemd.automount  0  0
 ```
 
-Mount it now without rebooting:
+`nofail` and `x-systemd.automount` let the machine boot normally when the NAS is off. The share then mounts the first time something opens the folder. If the share name has a space in it, write the space as `\040`, e.g. `//192.168.1.100/3D\040Files`.
+
+Create the mount point and mount it now without rebooting:
 
 ```bash
+sudo mkdir -p /mnt/nas/stl
+sudo systemctl daemon-reload
 sudo mount -a
 ```
 
