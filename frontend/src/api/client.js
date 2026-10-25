@@ -53,6 +53,7 @@ export const api = {
   reconcile: {
     get:     (platform)                   => req('GET',    `/reconcile/${platform}`),
     sync:    (platform)                   => req('POST',   `/reconcile/${platform}/sync`),
+    import:  (platform, files)            => req('POST',   `/reconcile/${platform}/import`, { files }),
     link:    (platform, externalId, path) => req('POST',   `/reconcile/${platform}/${encodeURIComponent(externalId)}/link`, { path }),
     unlink:  (platform, externalId)       => req('DELETE', `/reconcile/${platform}/${encodeURIComponent(externalId)}/link`),
     reject:  (platform, externalId, path) => req('POST',   `/reconcile/${platform}/${encodeURIComponent(externalId)}/reject`, { path }),

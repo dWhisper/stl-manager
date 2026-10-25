@@ -97,29 +97,43 @@ function fileHits(purchase, L) {
     const paths = L.byZipName.get(key) ?? L.byFileName.get(key);
     if (!paths) continue;
     const weight = paths.size <= 2 ? 1 : paths.size <= 5 ? 0.4 : 0.1;
-    hits.push({ paths: [...paths], weight });
+    hits.push({ paths: [...paths], weight, zip: L.byZipName.has(key) });
   }
   return hits;
 }
 
+// Share of the item's files found under a path. A whole archive with a
+// distinctive name counts for more than its share: items often offer
+// alternatives (FDM / resin, v6 / v7) and people keep only one.
+const ZIP_FLOOR = 0.6;
+
 function fileScore(candidatePath, hits, total) {
   if (!total) return 0;
-  let found = 0;
-  for (const h of hits) if (h.paths.some((p) => within(p, candidatePath))) found += h.weight;
-  return found / total;
+  let found = 0, zip = false;
+  for (const h of hits) {
+    if (!h.paths.some((p) => within(p, candidatePath))) continue;
+    found += h.weight;
+    if (h.zip && h.weight === 1) zip = true;
+  }
+  return Math.max(found / total, zip ? ZIP_FLOOR : 0);
 }
 
-// Weighted overlap of name words: shared / all, each word weighted by rarity
+// Below this, a match on name alone is only worth checking, never certain
+const ONE_WORD_CAP = 0.55;
+
+// Weighted overlap of name words: shared / all, each word weighted by rarity.
+// One shared word ("Bard", "Angel") is too little to be sure of on its own.
 function nameScore(want, node, L) {
   const have = L.nodeTokens.get(node);
   if (!have) return 0;
-  let shared = 0, all = 0;
+  let shared = 0, all = 0, count = 0;
   for (const t of new Set([...want, ...have])) {
     const w = L.idf(t);
     all += w;
-    if (want.has(t) && have.has(t)) shared += w;
+    if (want.has(t) && have.has(t)) { shared += w; count++; }
   }
-  return all ? shared / all : 0;
+  const score = all ? shared / all : 0;
+  return count < 2 ? Math.min(score, ONE_WORD_CAP) : score;
 }
 
 function creatorInPath(creator, nodePath) {
@@ -140,10 +154,10 @@ function candidatesFor(purchase, L, rejected) {
     if (!list || list.length > 3000) continue;
     for (const node of list) candidates.set(node.path, node);
   }
-  // Wherever the item's files turned up
+  // Wherever the item's files turned up, and the folders around them: a
+  // collection's zips usually sit together in one folder (e.g. "Print Minis/2023-10")
   for (const h of hits) for (const p of h.paths) {
-    const node = L.index.nodes.get(p);
-    if (node) candidates.set(p, node);
+    for (let node = L.index.nodes.get(p); node?.path; node = node.parent) candidates.set(node.path, node);
   }
 
   const out = [];
@@ -160,14 +174,15 @@ function candidatesFor(purchase, L, rejected) {
     if (creator && score > 0.2) score += 0.1;
     score = Math.min(score, 1);
     if (score < 0.25) continue;
-    out.push({ path: p, score, files, name, creator });
+    const filesFound = hits.filter((h) => h.paths.some((hp) => within(hp, p))).length;
+    out.push({ path: p, score, files, filesFound, name, creator });
   }
   return out.sort((a, b) => b.score - a.score || a.path.length - b.path.length);
 }
 
 function reasonFor(c, purchase) {
   const parts = [];
-  if (c.files > 0) parts.push(`${Math.round(c.files * purchase.fileNames.length)}/${purchase.fileNames.length} file names`);
+  if (c.files > 0) parts.push(`${c.filesFound}/${purchase.fileNames.length} file names`);
   if (c.name >= 0.3) parts.push('name');
   if (c.creator) parts.push('creator');
   return parts.join(' + ') || 'similar name';
@@ -189,7 +204,7 @@ function loadPurchases(platform) {
     externalId: r.external_id, name: r.name, creator: r.creator, url: r.url,
     downloadUrl: r.download_url, thumbnailUrl: r.thumbnail_url,
     fileNames: r.file_names ? JSON.parse(r.file_names) : [],
-    purchasedAt: r.purchased_at, ignored: !!r.ignored,
+    purchasedAt: r.purchased_at, source: r.source, ignored: !!r.ignored,
   }));
 }
 
@@ -250,17 +265,18 @@ export function reconcile(platform) {
   return result;
 }
 
-// Replace the platform's purchases with a fresh list, keeping what the user set
-export function savePurchases(platform, list) {
+// Save a fresh list of the platform's purchases, keeping what the user set.
+// A full sync replaces the list; an import of some pages (merge) only adds.
+export function savePurchases(platform, list, { merge = false } = {}) {
   const db = getDb();
   const upsert = db.prepare(`
-    INSERT INTO purchases (platform, external_id, name, creator, url, download_url, thumbnail_url, file_names, purchased_at, synced_at)
-    VALUES (@platform, @externalId, @name, @creator, @url, @downloadUrl, @thumbnailUrl, @fileNames, @purchasedAt, datetime('now'))
+    INSERT INTO purchases (platform, external_id, name, creator, url, download_url, thumbnail_url, file_names, purchased_at, source, synced_at)
+    VALUES (@platform, @externalId, @name, @creator, @url, @downloadUrl, @thumbnailUrl, @fileNames, @purchasedAt, @source, datetime('now'))
     ON CONFLICT(platform, external_id) DO UPDATE SET
       name = excluded.name, creator = excluded.creator, url = excluded.url,
       download_url = excluded.download_url, thumbnail_url = excluded.thumbnail_url,
       file_names = excluded.file_names, purchased_at = excluded.purchased_at,
-      synced_at = excluded.synced_at
+      source = COALESCE(excluded.source, source), synced_at = excluded.synced_at
   `);
   // Newest first, so an item bought twice keeps its latest download link
   const seen = new Set();
@@ -268,17 +284,19 @@ export function savePurchases(platform, list) {
     for (const p of list) {
       if (!p.externalId || seen.has(p.externalId)) continue;
       seen.add(p.externalId);
-      upsert.run({ ...p, platform, fileNames: JSON.stringify(p.fileNames ?? []) });
+      upsert.run({ ...p, platform, source: p.source ?? null, fileNames: JSON.stringify(p.fileNames ?? []) });
     }
     // Drop items no longer on the account (refunds); their model_links stay
-    const keep = [...seen];
-    db.prepare(`
-      DELETE FROM purchases WHERE platform = ? AND external_id NOT IN (SELECT value FROM json_each(?))
-    `).run(platform, JSON.stringify(keep));
+    if (!merge) {
+      db.prepare(`
+        DELETE FROM purchases WHERE platform = ? AND external_id NOT IN (SELECT value FROM json_each(?))
+      `).run(platform, JSON.stringify([...seen]));
+    }
+    const total = db.prepare(`SELECT COUNT(*) n FROM purchases WHERE platform = ?`).get(platform).n;
     db.prepare(`
       INSERT INTO platform_sync (platform, synced_at, total, error) VALUES (?, datetime('now'), ?, NULL)
       ON CONFLICT(platform) DO UPDATE SET synced_at = excluded.synced_at, total = excluded.total, error = NULL
-    `).run(platform, seen.size);
+    `).run(platform, total);
   })();
   invalidate();
   return seen.size;

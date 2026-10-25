@@ -4,11 +4,17 @@ import { getDb } from '../db/schema.js';
 import { reconcile, savePurchases, saveSyncError, invalidate } from '../services/reconcile.js';
 import { describePath } from '../services/library.js';
 import { runSync, SYNC_PLATFORMS } from '../services/syncWorker.js';
+import { parseLibraryExport } from '../services/mmf.js';
 
 const router = Router();
 
+// Platforms whose purchases come from an uploaded export instead of a sync
+const IMPORTERS = {
+  myminifactory: parseLibraryExport,
+};
+
 function platformParam(req, res, next) {
-  if (!SYNC_PLATFORMS.includes(req.params.platform)) return res.status(404).json({ error: 'Unknown platform' });
+  if (!SYNC_PLATFORMS.includes(req.params.platform) && !IMPORTERS[req.params.platform]) return res.status(404).json({ error: 'Unknown platform' });
   next();
 }
 
@@ -27,6 +33,7 @@ router.get('/:platform', platformParam, (req, res) => {
 // NAS. The page polls GET /:platform until `syncing` is null.
 router.post('/:platform/sync', platformParam, (req, res) => {
   const { platform } = req.params;
+  if (!SYNC_PLATFORMS.includes(platform)) return res.status(400).json({ error: `${platform} purchases are imported, not synced` });
   const creds = getDb().prepare(`
     SELECT username, api_key FROM platform_credentials WHERE platform = ? AND profile_json IS NOT NULL
   `).get(platform);
@@ -43,6 +50,34 @@ router.post('/:platform/sync', platformParam, (req, res) => {
     })
     .finally(() => syncs.delete(platform));
   res.status(202).json({ ok: true });
+});
+
+// Add purchases from saved library pages: body is { files: [parsed JSON, ...] }
+router.post('/:platform/import', platformParam, (req, res) => {
+  const { platform } = req.params;
+  const parse = IMPORTERS[platform];
+  if (!parse) return res.status(400).json({ error: `${platform} purchases are synced, not imported` });
+  const files = Array.isArray(req.body.files) ? req.body.files : [];
+
+  const purchases = [];
+  let totalCount = null;
+  // The export script's notes on groups it couldn't read
+  const exportNotes = files.map((f) => f?.export).filter(Boolean);
+  for (const data of files) {
+    const parsed = parse(data);
+    purchases.push(...parsed.purchases);
+    totalCount = Math.max(totalCount ?? 0, parsed.totalCount ?? 0) || null;
+  }
+  if (!purchases.length) {
+    return res.status(400).json({ error: "Didn't find any purchases in that file. Is it the library data page saved as JSON?" });
+  }
+  savePurchases(platform, purchases, { merge: true });
+  const stored = getDb().prepare(`SELECT COUNT(*) n FROM purchases WHERE platform = ?`).get(platform).n;
+  res.json({
+    ok: true, imported: purchases.length, stored, totalCount,
+    failures: exportNotes.flatMap((n) => n.failures ?? []),
+    emptyGroups: exportNotes.reduce((sum, n) => sum + (n.empty?.length ?? 0), 0),
+  });
 });
 
 // Confirm which library folder or model holds a purchase (replaces any earlier link)

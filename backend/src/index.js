@@ -19,7 +19,8 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json());
+// Big enough for an uploaded MyMiniFactory library export
+app.use(express.json({ limit: '50mb' }));
 
 app.use('/api/files', filesRouter);
 app.use('/api/tags', tagsRouter);

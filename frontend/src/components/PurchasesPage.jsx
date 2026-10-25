@@ -1,15 +1,21 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   RefreshCw, Loader, ExternalLink, Download, Check, X, Folder, Box, Search,
-  EyeOff, Eye, Link2, Unlink, Copy, ShoppingBag,
+  EyeOff, Eye, Link2, Unlink, Copy, ShoppingBag, Upload,
 } from 'lucide-react';
 import { api } from '../api/client.js';
 import { formatCount } from '../utils/format.js';
 import Pagination, { usePageSize } from './Pagination.jsx';
+import { MMF_EXPORT_SCRIPT } from '../utils/mmfExportScript.js';
 
+// Cults purchases sync through its API. MyMiniFactory's API has no purchases
+// endpoint, so its library data is saved from the browser and uploaded.
 const PLATFORMS = [
-  { id: 'cults3d', label: 'Cults 3D' },
+  { id: 'cults3d', label: 'Cults 3D', mode: 'sync' },
+  { id: 'myminifactory', label: 'MyMiniFactory', mode: 'import' },
 ];
+
+const MMF_DATA_URL = 'https://www.myminifactory.com/data-library/purchases';
 
 const FILTERS = [
   { id: 'missing',  label: 'Missing',  hint: 'Bought, but not found on the NAS' },
@@ -160,6 +166,111 @@ function LibraryPicker({ item, onPick, onClose }) {
   );
 }
 
+// Upload or paste saved copies of MMF's library data pages
+function ImportPanel({ platform, onImported, onClose }) {
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [copied, setCopied] = useState(false);
+
+  async function copyScript() {
+    try {
+      await navigator.clipboard.writeText(MMF_EXPORT_SCRIPT);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard blocked */ }
+  }
+
+  async function send(sources) {
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const files = sources.map(({ name, body }) => {
+        // A copy from the browser's JSON viewer starts with its toolbar ("Raw Parsed Copy…")
+        const start = body.search(/[{[]/);
+        try { return JSON.parse(start > 0 ? body.slice(start) : body); } catch { throw new Error(`${name} isn't JSON. Save the page as raw JSON, not as a web page.`); }
+      });
+      const r = await api.reconcile.import(platform, files);
+      setResult(r);
+      setText('');
+      onImported();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function pickFiles(e) {
+    const list = [...e.target.files];
+    e.target.value = '';
+    if (list.length) send(await Promise.all(list.map(async (f) => ({ name: f.name, body: await f.text() }))));
+  }
+
+  const nextPage = result?.totalCount && result.stored < result.totalCount
+    ? Math.floor(result.stored / Math.max(result.imported, 1)) + 1
+    : null;
+
+  return (
+    <div style={{ ...s.picker, flexBasis: 'auto', margin: '12px 16px 0', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <strong style={{ fontSize: 13, flex: 1 }}>Import MyMiniFactory purchases</strong>
+        <button style={s.btn()} onClick={onClose}><X size={12} /></button>
+      </div>
+      <div style={{ fontSize: 12, fontWeight: 600 }}>Whole library (purchases, campaigns, tribes, shared)</div>
+      <ol style={{ ...s.dim, margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>
+        <li>
+          <button style={{ ...s.btn(), padding: '2px 8px' }} onClick={copyScript}>
+            <Copy size={11} /> {copied ? 'Copied' : 'Copy export script'}
+          </button>
+        </li>
+        <li>
+          Open <a href="https://www.myminifactory.com/library" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>your MyMiniFactory library</a> while
+          logged in, open the browser console (<code>⌥⌘J</code> in Chrome, <code>⌥⌘C</code> in Safari), paste, and press Enter.
+          Chrome may ask you to type <code>allow pasting</code> first.
+        </li>
+        <li>It reads every page one at a time (a few minutes), then downloads <code>mmf-library.json</code>. Upload that here.</li>
+      </ol>
+      <div style={{ fontSize: 12, fontWeight: 600 }}>Or just one page</div>
+      <div style={{ ...s.dim, lineHeight: 1.6 }}>
+        Open <a href={MMF_DATA_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>{MMF_DATA_URL}</a> (and{' '}
+        <code>?page=2</code>, <code>?page=3</code>…), save each as raw JSON and upload them, or copy one and paste it below.
+        Importing adds to what's already here.
+      </div>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <label style={{ ...s.btn('primary'), opacity: busy ? 0.6 : 1 }}>
+          <Upload size={12} /> Upload files
+          <input type="file" accept=".json,application/json,text/plain" multiple hidden disabled={busy} onChange={pickFiles} />
+        </label>
+        <textarea
+          style={{ ...s.input, flex: 1, minHeight: 34, height: 34, resize: 'vertical', fontFamily: 'monospace' }}
+          placeholder="…or paste the page here" value={text} onChange={(e) => setText(e.target.value)}
+        />
+        <button style={s.btn()} disabled={busy || !text.trim()} onClick={() => send([{ name: 'Pasted text', body: text }])}>
+          {busy ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <Check size={12} />} Import pasted
+        </button>
+      </div>
+      {error && <div style={s.error}>{error}</div>}
+      {result && (
+        <div style={{ fontSize: 12, color: 'var(--text)' }}>
+          Imported {formatCount(result.imported)} purchases; {formatCount(result.stored)} saved in total
+          {result.totalCount ? ` of ${formatCount(result.totalCount)} in your MMF library` : ''}.
+          {nextPage && <> Next, open <a href={`${MMF_DATA_URL}?page=${nextPage}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>page {nextPage}</a>.</>}
+          {result.emptyGroups > 0 && ` ${formatCount(result.emptyGroups)} library groups were empty.`}
+          {result.failures?.length > 0 && (
+            <div style={s.error}>
+              {formatCount(result.failures.length)} groups couldn't be read: {result.failures.slice(0, 5).map((f) => f.group).join('; ')}
+              {result.failures.length > 5 && '…'}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PurchaseRow({ item, platform, onChanged, onOpen }) {
   const [picking, setPicking] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -186,9 +297,11 @@ function PurchaseRow({ item, platform, onChanged, onOpen }) {
   const ignore = (ignored) => act(() => api.reconcile.ignore(platform, id, ignored));
 
   const bought = item.purchasedAt ? new Date(item.purchasedAt).toLocaleDateString() : null;
-  const download = item.downloadUrl && (
-    <a style={s.btn(item.status === 'missing' ? 'primary' : 'ghost')} href={item.downloadUrl} target="_blank" rel="noopener noreferrer">
-      <Download size={12} /> Download
+  // Without a direct link (e.g. an MMF item with several archives) the item's page has the downloads
+  const download = (item.downloadUrl || item.url) && (
+    <a style={s.btn(item.status === 'missing' ? 'primary' : 'ghost')} href={item.downloadUrl || item.url} target="_blank" rel="noopener noreferrer"
+      title={item.downloadUrl ? 'Download' : 'Open the download page'}>
+      <Download size={12} /> {item.downloadUrl ? 'Download' : 'Downloads'}
     </a>
   );
 
@@ -203,7 +316,7 @@ function PurchaseRow({ item, platform, onChanged, onOpen }) {
           <span style={s.badge(item.status)}>{item.confirmed ? 'Confirmed' : STATUS_LABEL[item.status]}</span>
         </div>
         <div style={s.dim}>
-          {[item.creator, bought && `bought ${bought}`, item.fileNames.length && `${item.fileNames.length} file${item.fileNames.length !== 1 ? 's' : ''}`]
+          {[item.creator, item.source && item.source !== 'Purchases' && item.source, bought && `bought ${bought}`, item.fileNames.length && `${item.fileNames.length} file${item.fileNames.length !== 1 ? 's' : ''}`]
             .filter(Boolean).join(' · ')}
         </div>
         {item.match ? (
@@ -272,9 +385,13 @@ export default function PurchasesPage({ onNavigate, onOpenModel, integrationStat
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = usePageSize();
   const [copied, setCopied] = useState(false);
+  const [importing, setImporting] = useState(false);
   const listRef = useRef(null);
 
-  const connected = integrationStatus?.[platform]?.connected;
+  const platformInfo = PLATFORMS.find((p) => p.id === platform);
+  const imports = platformInfo.mode === 'import';
+  // Imports need no account connection
+  const connected = imports || integrationStatus?.[platform]?.connected;
 
   async function load() {
     try {
@@ -295,7 +412,7 @@ export default function PurchasesPage({ onNavigate, onOpenModel, integrationStat
     load();
   }
 
-  useEffect(() => { setData(null); load(); }, [platform]);
+  useEffect(() => { setData(null); setImporting(false); load(); }, [platform]);
 
   // The sync runs on the server; poll until it's done
   const syncState = data?.syncing;
@@ -345,10 +462,15 @@ export default function PurchasesPage({ onNavigate, onOpenModel, integrationStat
           </select>
         )}
         <span style={s.dim}>
-          {PLATFORMS.find((p) => p.id === platform).label}
-          {data?.syncedAt && ` · synced ${new Date(data.syncedAt.replace(' ', 'T') + 'Z').toLocaleString()}`}
+          {PLATFORMS.length === 1 && platformInfo.label}
+          {data?.syncedAt && `${PLATFORMS.length === 1 ? ' · ' : ''}${imports ? 'Imported' : 'Synced'} ${new Date(data.syncedAt.replace(' ', 'T') + 'Z').toLocaleString()}`}
         </span>
         <div style={{ flex: 1 }} />
+        {imports ? (
+          <button style={s.btn(neverSynced ? 'primary' : 'ghost')} onClick={() => setImporting((v) => !v)}>
+            <Upload size={12} /> Import purchases
+          </button>
+        ) : (
         <button style={s.btn(neverSynced ? 'primary' : 'ghost')} onClick={sync} disabled={syncing || !connected}
           title={connected ? 'Fetch your purchases from the platform' : 'Connect the account on the Integrations page first'}>
           {syncing ? <Loader size={12} style={{ animation: 'spin 1s linear infinite' }} /> : <RefreshCw size={12} />}
@@ -356,7 +478,12 @@ export default function PurchasesPage({ onNavigate, onOpenModel, integrationStat
             : syncState.total ? `Syncing… ${formatCount(syncState.done)}/${formatCount(syncState.total)} orders`
             : 'Syncing…'}
         </button>
+        )}
       </div>
+
+      {imports && (importing || neverSynced) && (
+        <ImportPanel platform={platform} onImported={load} onClose={() => setImporting(false)} />
+      )}
 
       {data && data.items.length > 0 && (
         <div style={{ ...s.toolbar, minHeight: 0 }}>
@@ -382,9 +509,9 @@ export default function PurchasesPage({ onNavigate, onOpenModel, integrationStat
           <div style={s.error}>{syncError || loadError || `Last sync failed: ${data.syncError}`}</div>
         )}
         {!connected && integrationStatus && (
-          <div style={s.empty}>Connect your {PLATFORMS.find((p) => p.id === platform).label} account on the Integrations page, then sync.</div>
+          <div style={s.empty}>Connect your {platformInfo.label} account on the Integrations page, then sync.</div>
         )}
-        {connected && neverSynced && !syncing && (
+        {connected && !imports && neverSynced && !syncing && (
           <div style={s.empty}>Sync to fetch your purchases and check which ones are on the NAS.</div>
         )}
         {connected && syncing && neverSynced && (
