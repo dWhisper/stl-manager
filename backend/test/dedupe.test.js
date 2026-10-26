@@ -132,6 +132,29 @@ test('contained: subset folder reported against its superset', () => {
   assert.equal(g.reclaimable, 300);
 });
 
+test('an unkeyed folder is never a container', () => {
+  const r = build([
+    row('A/S/a.stl', 'k1'), row('A/S/b.stl', 'k2'), row('A/S/c.stl', 'k3'),
+    row('B/P/a.stl', 'k1'), row('B/P/b.stl', 'k2'), row('B/P/c.stl', 'k3'),
+    row('B/P/u.stl', null),
+  ]);
+  assert.equal(r.contained.length, 0);
+});
+
+test('contained picks the same container regardless of row order', () => {
+  const rows = [
+    row('A/S/a.stl', 'k1'), row('A/S/b.stl', 'k2'), row('A/S/c.stl', 'k3'),
+    row('B/P/a.stl', 'k1'), row('B/P/b.stl', 'k2'), row('B/P/c.stl', 'k3'), row('B/P/d.stl', 'k4'),
+    row('C/Q/a.stl', 'k1'), row('C/Q/b.stl', 'k2'), row('C/Q/c.stl', 'k3'), row('C/Q/e.stl', 'k5'),
+    row('C/Q/f.stl', 'k6'),
+  ];
+  const one = build(rows);
+  const two = build([...rows].reverse());
+  assert.equal(one.contained.length, 1);
+  assert.deepEqual(paths(one.contained[0]), ['A/S', 'B/P']); // the smaller superset
+  assert.deepEqual(two.contained, one.contained);
+});
+
 test('contained needs at least 3 files', () => {
   const r = build([
     row('A/Sup/a.stl', 'k1'),  row('A/Sup/b.stl', 'k2'),
@@ -202,6 +225,13 @@ test('signature is stable across row order and changes with members', () => {
   const two = build([...rows].reverse());
   assert.equal(one.folders[0].signature, two.folders[0].signature);
   assert.equal(one.files[0].signature, two.files[0].signature);
+
+  const sub = [
+    row('A/S/a.stl', 'k1'), row('A/S/b.stl', 'k2'), row('A/S/c.stl', 'k3'),
+    row('B/P/a.stl', 'k1'), row('B/P/b.stl', 'k2'), row('B/P/c.stl', 'k3'), row('B/P/d.stl', 'k4'),
+    row('C/Q/a.stl', 'k1'), row('C/Q/b.stl', 'k2'), row('C/Q/c.stl', 'k3'), row('C/Q/e.stl', 'k5'),
+  ];
+  assert.deepEqual(build([...sub].reverse()).contained, build(sub).contained);
 
   const three = build([...rows, row('D/X/a.stl', 'k1'), row('D/X/b.stl', 'k2')]);
   assert.notEqual(three.folders[0].signature, one.folders[0].signature);

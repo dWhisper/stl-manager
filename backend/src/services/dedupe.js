@@ -195,18 +195,30 @@ function findContainer(a, tree, rows, keyRows) {
   if (rareCount > MAX_RARE_OCCURRENCES) return null;
 
   const prefix = a.path + '/';
+  // Every walk's first container is a candidate; picking among them by a fixed
+  // order (not row order) keeps the group signature stable across rebuilds
   const seen = new Set();
+  let best = null;
   for (const i of keyRows.get(rare)) {
     if (rows[i].logical.startsWith(prefix)) continue; // inside A
     for (let n = tree.rowNode[i]; n && n.depth >= 2; n = n.parent) {
       if (seen.has(n)) break;                          // this walk was already done above
       seen.add(n);
       if (a.path.startsWith(n.path + '/')) break;      // an ancestor of A, as is all above it
-      if (n.fileCount > a.fileCount && containsAll(n.keys, a.keys)) return n;
+      // Keyed only: unkeyed files would make B look bigger without proving anything
+      if (eligible(n) && n.keys.length > a.keys.length && containsAll(n.keys, a.keys)) {
+        if (!best || betterContainer(n, best)) best = n;
+        break;
+      }
     }
   }
-  return null;
+  return best;
 }
+
+// Smallest container first, then shortest path, then lexicographic
+const betterContainer = (n, b) => (n.fileCount - b.fileCount
+  || n.path.length - b.path.length
+  || (n.path < b.path ? -1 : 1)) < 0;
 
 // Multiset containment of sorted `small` in sorted `big`, by binary search per run
 function containsAll(big, small) {
