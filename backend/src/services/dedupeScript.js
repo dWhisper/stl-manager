@@ -39,9 +39,9 @@ export function planActions(groups, decisions, { stlRoot, hostRoot, zipSize }) {
       if (m.isZip) {
         const bytes = zipSize(m.real);
         if (bytes == null) { out('zip missing'); continue; }
-        collected.push({ type: 'file', ...base, expectSize: bytes, size: bytes, member: m.path });
+        collected.push({ type: 'file', zip: true, ...base, expectSize: bytes, size: bytes, member: m.path });
       } else if (m.isFolder) {
-        collected.push({ type: 'dir', ...base, expectCount: m.looseCount, size: m.size, member: m.path });
+        collected.push({ type: 'dir', ...base, expectCount: m.looseCount + (m.zipCount ?? 0), size: m.size, member: m.path });
       } else {
         collected.push({ type: 'file', ...base, expectSize: m.size, size: m.size, member: m.path });
       }
@@ -72,21 +72,25 @@ const q = s => "'" + s.replaceAll("'", "'\\''") + "'";
 // Comment text must stay on one line, or a path could become a command
 const oneLine = s => s.replace(/[\r\n]/g, m => (m === '\n' ? '\\n' : '\\r'));
 
-const MODE_BODY = {
-  mv: 'dest="$ROOT/_duplicates/$3"; [ -e "$dest" ] && { echo "SKIP $2: $dest exists"; return; }; '
-    + 'mkdir -p "$(dirname "$dest")" && mv -- "$2" "$dest" && echo "MOVED $2" || echo "FAIL $2"',
-  rm: 'rm -rf -- "$2" && echo "REMOVED $2" || echo "FAIL $2"',
-};
+const MV_BODY = 'dest="$ROOT/_duplicates/$3"; [ -e "$dest" ] && { echo "SKIP $2: $dest exists"; return; }; '
+  + 'mkdir -p "$(dirname "$dest")" && mv -- "$2" "$dest" && echo "MOVED $2" || echo "FAIL $2"';
+// rm mode only ever deletes one loose model file ($6 = rm); the guards above have
+// already proven it is a regular file of the expected size
+const RM_BODY = 'if [ "$6" = rm ]; then rm -f -- "$2" && echo "REMOVED $2" || echo "FAIL $2"; return; fi; ';
+const MODES = ['mv', 'rm'];
 
-// Model files the scanner indexes, below "$1" only, skipping what it ignores
+// Groups compare model files only, so a folder or zip can hold unique images, PDFs or
+// project files. Those are never deleted, whatever the mode.
+const deletable = a => a.type === 'file' && !a.zip && !/\.zip$/i.test(a.rel);
+
+// Model and zip files the scanner indexes, below "$1" only, skipping what it ignores
 const COUNT_MODELS = 'count_models() { ( cd -- "$1" >/dev/null && find . \\( -name \'.*\' -o -name \'@*\' '
   + '-o -iname __MACOSX -o -iname _duplicates -o -iname \'#recycle\' -o -iname \'#snapshot\' \\) '
-  + '! -name . -prune -o -type f \\( -iname \'*.stl\' -o -iname \'*.3mf\' -o -iname \'*.obj\' \\) -print ) '
+  + '! -name . -prune -o -type f \\( -iname \'*.stl\' -o -iname \'*.3mf\' -o -iname \'*.obj\' -o -iname \'*.zip\' \\) -print ) '
   + '| wc -l | tr -d \' \'; }';
 
 export function buildScript(plan, { mode, hostRoot }) {
-  const body = MODE_BODY[mode];
-  if (!body) throw new Error(`unknown mode: ${mode}`);
+  if (!MODES.includes(mode)) throw new Error(`unknown mode: ${mode}`);
   const host = trimSlash(hostRoot);
   const relOf = p => (p.startsWith(host + '/') ? safeRel(p.slice(host.length + 1)) : null);
   const bytes = plan.actions.reduce((s, a) => s + (a.size ?? 0), 0);
@@ -98,16 +102,18 @@ export function buildScript(plan, { mode, hostRoot }) {
     `# ${plan.actions.length} actions, ${bytes} bytes reclaimed, ${plan.manual.length} for manual handling`,
     `# Generated ${new Date().toISOString()}`,
     '# Each action runs only if its keeper exists and the copy is unchanged; otherwise SKIP.',
+    ...(mode === 'rm' ? ['# rm deletes single loose model files only. Folders and zips are moved to _duplicates/',
+      '# instead, since they may hold images, PDFs or project files that no duplicate check covered.'] : []),
     `ROOT=\${DEDUPE_HOST_ROOT:-${q(host)}}`,
     '',
     COUNT_MODELS,
-    'act() { # type path rel keeper expect',
+    'act() { # type path rel keeper expect disposal',
     '  [ -e "$4" ] || { echo "SKIP $2: keeper missing"; return; }',
     '  [ -e "$2" ] || { echo "SKIP $2: already gone"; return; }',
     '  if [ "$1" = file ]; then [ -f "$2" ] || { echo "SKIP $2: not a file"; return; }; got=$(wc -c < "$2" | tr -d \' \');',
     '  else [ -d "$2" ] || { echo "SKIP $2: not a folder"; return; }; got=$(count_models "$2"); fi',
     '  [ "$got" = "$5" ] || { echo "SKIP $2: expected $5, found $got"; return; }',
-    `  ${body}`,
+    `  ${mode === 'rm' ? RM_BODY : ''}${MV_BODY}`,
     '}',
     '',
   ];
@@ -116,7 +122,7 @@ export function buildScript(plan, { mode, hostRoot }) {
     if (rel === null || keeperRel === null) throw new Error(`action outside hostRoot: ${a.path}`);
     const expect = a.type === 'file' ? a.expectSize : a.expectCount;
     if (!Number.isInteger(expect)) throw new Error(`action without expectation: ${a.path}`);
-    lines.push(`act ${a.type === 'file' ? 'file' : 'dir'} "$ROOT"/${q(rel)} ${q(rel)} "$ROOT"/${q(keeperRel)} ${expect}`);
+    lines.push(`act ${a.type === 'file' ? 'file' : 'dir'} "$ROOT"/${q(rel)} ${q(rel)} "$ROOT"/${q(keeperRel)} ${expect} ${mode === 'rm' && deletable(a) ? 'rm' : 'mv'}`);
   }
   if (plan.manual.length) lines.push('');
   for (const m of plan.manual) lines.push(`# MANUAL ${oneLine(m.path)}: ${oneLine(m.reason)}`);

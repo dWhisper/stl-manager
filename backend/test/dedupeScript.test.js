@@ -215,18 +215,53 @@ test('DEDUPE_HOST_ROOT relocates every path', () => withTree(root => {
   assert.ok(exists(path.join(other, '_duplicates/B/a.stl')));
 }));
 
-test('rm mode deletes files and dirs', () => withTree(root => {
+test('rm mode deletes loose files but moves folders and zips', () => withTree(root => {
   put(root, 'A/a.stl'); put(root, 'B/a.stl');
-  put(root, 'A/P/m.stl'); put(root, 'B/P/m.stl');
-  const plan = { actions: [fileAction(root, 'B/a.stl', 'A/a.stl'), dirAction(root, 'B/P', 'A/P', 1)], manual: [] };
-  const out = run(buildScript(plan, { mode: 'rm', hostRoot: root }));
+  put(root, 'A/P/m.stl'); put(root, 'B/P/m.stl'); put(root, 'B/P/preview.jpg', 'unique');
+  put(root, 'A/Z.zip', 'zipbytes'); put(root, 'B/Z.zip', 'zipbytes');
+  const zipAction = { ...fileAction(root, 'B/Z.zip', 'A/Z.zip'), zip: true };
+  const plan = { actions: [fileAction(root, 'B/a.stl', 'A/a.stl'), dirAction(root, 'B/P', 'A/P', 1), zipAction], manual: [] };
+  const script = buildScript(plan, { mode: 'rm', hostRoot: root });
+  assert.match(script, /^# rm deletes single loose model files only/m);
+  const out = run(script);
   assert.match(out, /REMOVED .*B\/a\.stl/);
+  assert.match(out, /MOVED .*B\/P/);
+  assert.match(out, /MOVED .*B\/Z\.zip/);
   assert.ok(!exists(path.join(root, 'B/a.stl')));
+  assert.ok(!exists(path.join(root, '_duplicates/B/a.stl')));
   assert.ok(!exists(path.join(root, 'B/P')));
-  assert.ok(!exists(path.join(root, '_duplicates')));
+  assert.ok(!exists(path.join(root, 'B/Z.zip')));
+  assert.equal(fs.readFileSync(path.join(root, '_duplicates/B/P/preview.jpg'), 'utf8'), 'unique');
+  assert.ok(exists(path.join(root, '_duplicates/B/P/m.stl')));
+  assert.ok(exists(path.join(root, '_duplicates/B/Z.zip')));
   assert.ok(exists(path.join(root, 'A/a.stl')));
   assert.ok(exists(path.join(root, 'A/P/m.stl')));
+  assert.ok(exists(path.join(root, 'A/Z.zip')));
 }));
+
+test('rm mode moves a zip even when its action lacks the zip flag', () => withTree(root => {
+  put(root, 'A/Z.zip', 'zipbytes'); put(root, 'B/Z.zip', 'zipbytes');
+  const out = run(buildScript({ actions: [fileAction(root, 'B/Z.zip', 'A/Z.zip')], manual: [] }, { mode: 'rm', hostRoot: root }));
+  assert.match(out, /MOVED .*B\/Z\.zip/);
+  assert.ok(exists(path.join(root, '_duplicates/B/Z.zip')));
+}));
+
+test('script skips a zip-only folder after another zip is added', () => withTree(root => {
+  put(root, 'A/P/x.zip'); put(root, 'B/P/x.zip');
+  const script = buildScript({ actions: [dirAction(root, 'B/P', 'A/P', 1)], manual: [] }, { mode: 'mv', hostRoot: root });
+  put(root, 'B/P/sub/y.ZIP');
+  const out = run(script);
+  assert.match(out, /SKIP .*B\/P: expected 1, found 2/);
+  assert.ok(exists(path.join(root, 'B/P/x.zip')));
+}));
+
+test('a folder action expects model files plus zip files', () => {
+  const g = group('folders', [
+    member('A/P', { folder: true, count: 2, loose: 1 }),
+    { ...member('B/P', { folder: true, count: 2, loose: 1 }), zipCount: 2 },
+  ]);
+  assert.equal(plan([g], keep([g, 'A/P'])).actions[0].expectCount, 3);
+});
 
 test('script skips a file whose size changed', () => withTree(root => {
   put(root, 'A/a.stl'); const b = put(root, 'B/a.stl');
@@ -254,7 +289,7 @@ test('the model count ignores what the scanner skips', () => withTree(root => {
   const base = path.join(root, '.hidden'); // a dotted ancestor must not hide anything
   const script = buildScript({ actions: [dirAction(base, 'B/P', 'A/P', 2)], manual: [] }, { mode: 'rm', hostRoot: base });
   const out = run(script);
-  assert.match(out, /REMOVED/, out);
+  assert.match(out, /MOVED/, out);
   assert.ok(!exists(path.join(base, 'B/P')));
 }));
 
@@ -343,7 +378,7 @@ test('CDPATH cannot leak into the model count', () => withTree(root => {
   const r = spawnSync('bash', ['-c', script], {
     encoding: 'utf8', cwd: root, env: { ...process.env, CDPATH: root, DEDUPE_HOST_ROOT: 'tree' },
   });
-  assert.match(r.stdout, /REMOVED/, r.stdout);
+  assert.match(r.stdout, /MOVED/, r.stdout);
   assert.ok(!exists(path.join(tree, 'B/P')));
 }));
 
