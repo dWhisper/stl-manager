@@ -38,6 +38,7 @@ export function geoKeyFromStl(buf) {
 
   if (acc.n === 0) return null;
   const sides = acc.max.map((hi, k) => hi - acc.min[k]).sort((a, b) => a - b);
+  if (![acc.area, acc.vol, ...sides].every(Number.isFinite)) return null; // NaN/Infinity vertices
   return `t${sig(acc.n)}|b${sides.map(sig).join(',')}|a${sig(acc.area)}|v${sig(Math.abs(acc.vol))}`;
 }
 

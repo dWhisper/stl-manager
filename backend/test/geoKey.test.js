@@ -63,3 +63,9 @@ test('scaling changes the key', () => assert.notEqual(geoKeyFromStl(box(20, 40, 
 test('ascii and binary agree', () => assert.equal(geoKeyFromStl(asciiBox(10, 20, 30)), geoKeyFromStl(box(10, 20, 30))));
 test('every triangle counts, beyond the renderer cap', () => assert.match(geoKeyFromStl(manyTris(4_000_010)), /^t4000000\|/)); // 4.00e6 at 3 s.f.
 test('empty mesh is null', () => assert.equal(geoKeyFromStl(Buffer.alloc(84)), null));
+
+test('a non-finite vertex gives no key', () => {
+  const b = box(2, 3, 4);
+  b.writeFloatLE(NaN, 84 + 12);
+  assert.equal(geoKeyFromStl(b), null);
+});
