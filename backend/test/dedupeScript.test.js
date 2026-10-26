@@ -98,6 +98,19 @@ test('a member outside stlRoot goes to manual', () => {
   assert.deepEqual(r.manual, [{ path: 'B/a.stl', reason: 'outside the library' }]);
 });
 
+test('a member at the library root, or with empty or dot segments, goes to manual', () => {
+  for (const real of ['/nas/', '/nas//A', '/nas/A/../B', '/nas/./A', '/nas']) {
+    const m = { ...member('B/a.stl'), real };
+    const g = group('files', [member('A/a.stl'), m]);
+    const r = plan([g], keep([g, 'A/a.stl']));
+    assert.deepEqual(r.actions, [], real);
+    assert.deepEqual(r.manual, [{ path: 'B/a.stl', reason: 'outside the library' }], real);
+    // The same check guards the keeper
+    const r2 = plan([g], keep([g, 'B/a.stl']));
+    assert.deepEqual(r2.actions, [], real);
+  }
+});
+
 test('a container is never removed in favour of its subset', () => {
   const g = group('contained', [
     member('A/P', { folder: true, count: 3 }),
@@ -306,6 +319,33 @@ test('manual items appear as comments only', () => {
   assert.equal(r.status, 0);
   assert.equal(r.stdout, '');
 });
+
+test('buildScript refuses paths that leave or are ROOT', () => {
+  const ok = { type: 'file', path: '/vol/B/a.stl', rel: 'B/a.stl', keeper: '/vol/A/a.stl', expectSize: 1, size: 1 };
+  const bad = [
+    { ...ok, path: '/vol/../etc', rel: '../etc' },
+    { ...ok, path: '/vol/', rel: '' },
+    { ...ok, path: '/vol/B//a.stl' },
+    { ...ok, path: '/vol/B/./a.stl' },
+    { ...ok, keeper: '/vol/A/..' },
+  ];
+  for (const a of bad) {
+    assert.throws(() => buildScript({ actions: [a], manual: [] }, { mode: 'rm', hostRoot: '/vol' }), /outside hostRoot/, JSON.stringify(a));
+  }
+  assert.doesNotThrow(() => buildScript({ actions: [ok], manual: [] }, { mode: 'rm', hostRoot: '/vol' }));
+});
+
+test('CDPATH cannot leak into the model count', () => withTree(root => {
+  // A relative ROOT found through CDPATH makes cd print the directory
+  const tree = path.join(root, 'tree');
+  put(tree, 'A/P/m.stl'); put(tree, 'B/P/m.stl');
+  const script = buildScript({ actions: [dirAction(tree, 'B/P', 'A/P', 1)], manual: [] }, { mode: 'rm', hostRoot: tree });
+  const r = spawnSync('bash', ['-c', script], {
+    encoding: 'utf8', cwd: root, env: { ...process.env, CDPATH: root, DEDUPE_HOST_ROOT: 'tree' },
+  });
+  assert.match(r.stdout, /REMOVED/, r.stdout);
+  assert.ok(!exists(path.join(tree, 'B/P')));
+}));
 
 test('bash -n accepts the output', () => withTree(root => {
   const plan = {

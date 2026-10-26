@@ -11,11 +11,13 @@ const KEEPER_REMOVED = 'keeper is removed by another group';
 const trimSlash = s => s.replace(/\/+$/, '');
 // p equals a or sits under it, on a '/' boundary (a/b is not under a/bc)
 const atOrUnder = (p, a) => p === a || p.startsWith(a + '/');
+// A usable relative path: never empty, never ROOT itself, never escaping it
+const safeRel = rel => (rel === '' || rel.split('/').some(s => s === '' || s === '.' || s === '..') ? null : rel);
 
 export function planActions(groups, decisions, { stlRoot, hostRoot, zipSize }) {
   const stl = trimSlash(stlRoot);
   const host = trimSlash(hostRoot);
-  const toRel = real => (real.startsWith(stl + '/') ? real.slice(stl.length + 1) : null);
+  const toRel = real => (real.startsWith(stl + '/') ? safeRel(real.slice(stl.length + 1)) : null);
 
   const collected = [];
   const manual = [];
@@ -77,7 +79,7 @@ const MODE_BODY = {
 };
 
 // Model files the scanner indexes, below "$1" only, skipping what it ignores
-const COUNT_MODELS = 'count_models() { ( cd "$1" && find . \\( -name \'.*\' -o -name \'@*\' '
+const COUNT_MODELS = 'count_models() { ( cd -- "$1" >/dev/null && find . \\( -name \'.*\' -o -name \'@*\' '
   + '-o -iname __MACOSX -o -iname _duplicates -o -iname \'#recycle\' -o -iname \'#snapshot\' \\) '
   + '! -name . -prune -o -type f \\( -iname \'*.stl\' -o -iname \'*.3mf\' -o -iname \'*.obj\' \\) -print ) '
   + '| wc -l | tr -d \' \'; }';
@@ -86,7 +88,7 @@ export function buildScript(plan, { mode, hostRoot }) {
   const body = MODE_BODY[mode];
   if (!body) throw new Error(`unknown mode: ${mode}`);
   const host = trimSlash(hostRoot);
-  const relOf = p => (p.startsWith(host + '/') ? p.slice(host.length + 1) : null);
+  const relOf = p => (p.startsWith(host + '/') ? safeRel(p.slice(host.length + 1)) : null);
   const bytes = plan.actions.reduce((s, a) => s + (a.size ?? 0), 0);
 
   const lines = [
