@@ -8,6 +8,7 @@ import FileDetail from './components/FileDetail.jsx';
 import SearchResults from './components/SearchResults.jsx';
 import IntegrationsPage from './components/IntegrationsPage.jsx';
 import PurchasesPage from './components/PurchasesPage.jsx';
+import DuplicatesPage from './components/DuplicatesPage.jsx';
 import { useApi } from './hooks/useApi.js';
 import { api } from './api/client.js';
 
@@ -26,7 +27,7 @@ function hashFor(f) {
 
 export default function App() {
   const [filter, setFilter]   = useState(() => parseHash() ?? { view: 'library', path: '' });
-  const [view,   setView]     = useState(() => (window.location.hash === '#/purchases' ? 'purchases' : 'files'));   // 'files' | 'integrations' | 'purchases'
+  const [view,   setView]     = useState(() => (window.location.hash === '#/purchases' ? 'purchases' : window.location.hash === '#/duplicates' ? 'duplicates' : 'files'));   // 'files' | 'integrations' | 'purchases' | 'duplicates'
   const [selectedId, setSelectedId] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const { data: allTags, refresh: refreshTags } = useApi(() => api.tags.list());
@@ -37,6 +38,7 @@ export default function App() {
   useEffect(() => {
     const onHash = () => {
       if (window.location.hash === '#/purchases') return setView('purchases');
+      if (window.location.hash === '#/duplicates') return setView('duplicates');
       const f = parseHash();
       if (f) { setFilter(f); setView('files'); }
     };
@@ -62,6 +64,7 @@ export default function App() {
   function handleSetView(v) {
     // The purchases list links into the library, so it gets a history entry for Back
     if (v === 'purchases' && window.location.hash !== '#/purchases') window.history.pushState(null, '', '#/purchases');
+    if (v === 'duplicates' && window.location.hash !== '#/duplicates') window.history.pushState(null, '', '#/duplicates');
     setView(v);
     setSearchQuery('');
   }
@@ -80,6 +83,8 @@ export default function App() {
           <IntegrationsPage />
         ) : view === 'purchases' && !isSearching ? (
           <PurchasesPage onNavigate={browse} onOpenModel={openModel} integrationStatus={integrationStatus} />
+        ) : view === 'duplicates' && !isSearching ? (
+          <DuplicatesPage onNavigate={browse} />
         ) : isSearching ? (
           <SearchResults query={searchQuery} onSelect={setSelectedId} />
         ) : filter.view === 'library' ? (

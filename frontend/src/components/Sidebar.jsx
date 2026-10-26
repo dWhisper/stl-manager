@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Tag, FolderOpen, RefreshCw, Plus, Loader, Plug, Library, Files, ChevronRight, Folder, FolderArchive, ShoppingBag } from 'lucide-react';
+import { Tag, FolderOpen, RefreshCw, Plus, Loader, Plug, Library, Files, ChevronRight, Folder, FolderArchive, ShoppingBag, Copy } from 'lucide-react';
 import { api } from '../api/client.js';
 import { useApi } from '../hooks/useApi.js';
 import { formatCount } from '../utils/format.js';
@@ -195,6 +195,14 @@ export default function Sidebar({ filter, setFilter, view, setView }) {
         >
           <ShoppingBag size={14} />
           <span style={{ flex: 1 }}>Purchases</span>
+        </div>
+        <div
+          style={{ ...s.item, ...(view === 'duplicates' ? s.itemActive : {}) }}
+          onClick={() => setView('duplicates')}
+          title="Duplicate folders, zips and files, with a cleanup script"
+        >
+          <Copy size={14} />
+          <span style={{ flex: 1 }}>Duplicates</span>
         </div>
       </div>
 

@@ -59,6 +59,14 @@ export const api = {
     reject:  (platform, externalId, path) => req('POST',   `/reconcile/${platform}/${encodeURIComponent(externalId)}/reject`, { path }),
     ignore:  (platform, externalId, ignored) => req('POST', `/reconcile/${platform}/${encodeURIComponent(externalId)}/ignore`, { ignored }),
   },
+  // Duplicate groups, the user's decisions on them, and the cleanup script
+  dedupe: {
+    summary:   ()                => req('GET',    '/dedupe/summary'),
+    groups:    (params)          => req('GET',    `/dedupe/groups?${new URLSearchParams(params)}`),
+    decide:    (signature, body) => req('PUT',    `/dedupe/decisions/${encodeURIComponent(signature)}`, body),
+    undecide:  (signature)       => req('DELETE', `/dedupe/decisions/${encodeURIComponent(signature)}`),
+    scriptUrl: (mode)            => `${BASE}/dedupe/script?mode=${encodeURIComponent(mode)}`,
+  },
   search: {
     query: (q) => req('GET', `/search?q=${encodeURIComponent(q)}`),
   },
