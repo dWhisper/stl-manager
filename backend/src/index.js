@@ -12,7 +12,7 @@ import libraryRouter      from './routes/library.js';
 import reconcileRouter    from './routes/reconcile.js';
 import linksRouter        from './routes/links.js';
 import { startWatcher, getWatcherStatus, reconcile } from './services/scanner.js';
-import { queueAll, getPendingCount } from './services/thumbnailer.js';
+import { queueAll, getPendingCount, queueGeoBackfill, getGeoPending } from './services/thumbnailer.js';
 import { startFingerprinter, getFingerprintPending } from './services/fingerprinter.js';
 import { folderTree } from './services/library.js';
 
@@ -35,7 +35,7 @@ app.use('/api/links',        linksRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-app.get('/api/status', (req, res) => res.json({ ...getWatcherStatus(), thumbPending: getPendingCount(), fingerprintPending: getFingerprintPending() }));
+app.get('/api/status', (req, res) => res.json({ ...getWatcherStatus(), thumbPending: getPendingCount(), fingerprintPending: getFingerprintPending(), geoPending: getGeoPending() }));
 
 // Manual reconcile: removes DB rows whose files no longer exist on disk.
 // The watcher handles new/changed files automatically; this cleans up edge cases
@@ -57,6 +57,8 @@ app.listen(PORT, () => {
     console.log(`Initial index complete: ${count} files`);
     const queued = queueAll();
     if (queued) console.log(`Queued ${queued} thumbnail(s) for generation`);
+    const geoQueued = queueGeoBackfill();
+    if (geoQueued) console.log(`Queued ${geoQueued} geometry backfill job(s)`);
     startFingerprinter();
     folderTree('');  // build the library index now rather than on the first visit
   });

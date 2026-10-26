@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { Worker } from 'worker_threads';
 import { getDb } from '../db/schema.js';
-import { extractToCache } from './zipScanner.js';
+import { extractToCache, cachePathFor } from './zipScanner.js';
 
 const THUMB_DIR  = process.env.THUMB_DIR  || '/data/thumbnails';
 // Each worker renders one STL at a time on its own thread
@@ -13,7 +13,10 @@ const WORKERS    = Math.max(1, parseInt(process.env.THUMB_WORKERS || '3', 10));
 const queue = new Set();
 // Files someone is looking at right now jump ahead of the background backlog
 const priority = new Set();
+// Lowest priority: geometry fingerprints for STLs thumbnailed before geo_key existed
+const geoQueue = new Set();
 let active = 0;
+let activeGeo = 0;   // subset of `active`, tracked so thumbnail pending counts exclude it
 
 export function queueThumbnail(fileId) {
   queue.add(fileId);
@@ -33,12 +36,42 @@ export function queueAll() {
   return rows.length;
 }
 
+export function queueGeoBackfill() {
+  const rows = getDb().prepare(`
+    SELECT id FROM files
+    WHERE lower(name) LIKE '%.stl' AND thumbnail_path IS NOT NULL
+      AND geo_key IS NULL AND fingerprint_error IS NULL
+  `).all();
+  for (const r of rows) geoQueue.add(r.id);
+  drainQueue();
+  return rows.length;
+}
+
+// Thumbnail work only, so the CRC fingerprinter isn't held up by the geo backfill
 export function getPendingCount() {
-  return queue.size + priority.size + active;
+  return queue.size + priority.size + (active - activeGeo);
+}
+
+export function getGeoPending() {
+  return geoQueue.size + activeGeo;
 }
 
 function drainQueue() {
-  while (active < WORKERS && (priority.size || queue.size)) {
+  while (active < WORKERS && (priority.size || queue.size || geoQueue.size)) {
+    if (!priority.size && !queue.size) {
+      const [id] = geoQueue;
+      geoQueue.delete(id);
+      active++;
+      activeGeo++;
+      generateGeoKey(id)
+        .catch((e) => {
+          console.error(`Geo key failed [${id}]: ${e.message}`);
+          getDb().prepare(`UPDATE files SET fingerprint_error = ?, updated_at = datetime('now') WHERE id = ?`)
+            .run(`geo: ${e.message}`, id);
+        })
+        .finally(() => { active--; activeGeo--; drainQueue(); });
+      continue;
+    }
     const [id] = priority.size ? priority : queue;  // first element of a Set
     priority.delete(id);
     queue.delete(id);
@@ -87,7 +120,7 @@ function spawnWorker() {
   idle.push(worker);
 }
 
-function renderInWorker(stlPath, outPath) {
+function renderInWorker(stlPath, outPath, mode) {
   if (!poolStarted) {
     poolStarted = true;
     for (let i = 0; i < WORKERS; i++) spawnWorker();
@@ -98,7 +131,7 @@ function renderInWorker(stlPath, outPath) {
   worker.jobId = jobId;
   return new Promise((resolve, reject) => {
     pending.set(jobId, { resolve, reject });
-    worker.postMessage({ jobId, stlPath, outPath });
+    worker.postMessage({ jobId, stlPath, outPath, mode });
   });
 }
 
@@ -128,4 +161,30 @@ async function generateThumbnail(fileId) {
 
   db.prepare(`UPDATE files SET thumbnail_path = ?, geo_key = ?, thumb_error = NULL, updated_at = datetime('now') WHERE id = ?`)
     .run(thumbPath, geoKey, fileId);
+}
+
+// Geometry fingerprint only (no render). Never touches thumb_error.
+async function generateGeoKey(fileId) {
+  const db  = getDb();
+  const row = db.prepare(`SELECT path, name, size, zip_source, zip_entry FROM files WHERE id = ?`).get(fileId);
+  if (!row) return;
+
+  let stlPath = row.path;
+  let extracted = null;   // set only when this job created the cache file
+  try {
+    if (row.zip_source) {
+      if (!fs.existsSync(row.zip_source)) return;
+      const cached = cachePathFor(row.zip_source, row.zip_entry);
+      const existed = fs.existsSync(cached);
+      stlPath = await extractToCache(row.zip_source, row.zip_entry, row.size);
+      if (!existed) extracted = stlPath;
+    } else if (!fs.existsSync(stlPath)) return;
+
+    const geoKey = await renderInWorker(stlPath, null, 'geo');
+    if (!geoKey) throw new Error('STL has no readable triangles');
+    db.prepare(`UPDATE files SET geo_key = ?, updated_at = datetime('now') WHERE id = ?`).run(geoKey, fileId);
+  } finally {
+    // Backfill must not bloat the cache; thumbnail renders keep theirs for the viewer
+    if (extracted) fs.rmSync(extracted, { force: true });
+  }
 }
