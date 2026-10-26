@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { getDb } from '../db/schema.js';
 import { scanZip, removeZipEntries } from './zipScanner.js';
 import { queueThumbnail, queueAll } from './thumbnailer.js';
+import { queueFingerprint } from './fingerprinter.js';
 
 const STL_ROOT = process.env.STL_ROOT || '/nas';
 // Skip hidden files/dirs, NAS system dirs (@eaDir, @tmp, ...) and the UGOS/Synology
@@ -67,10 +68,11 @@ export function startWatcher(onReady) {
           geo_key = CASE WHEN files.modified_at IS excluded.modified_at AND files.size IS excluded.size THEN files.geo_key END,
           fingerprint_error = CASE WHEN files.modified_at IS excluded.modified_at AND files.size IS excluded.size THEN files.fingerprint_error END,
           updated_at  = datetime('now')
-        RETURNING id, thumbnail_path, thumb_error
+        RETURNING id, thumbnail_path, thumb_error, content_key
       `).get({ id, path: filePath, name: path.basename(filePath), size: stat.size, modified_at: stat.mtime.toISOString() });
       // Queue thumbnail only if not yet generated and not known to fail
       if (row && !row.thumbnail_path && !row.thumb_error) queueThumbnail(row.id);
+      if (row && !row.content_key) queueFingerprint(row.id);
     } catch {
       // file disappeared between event and stat — ignore
     }
