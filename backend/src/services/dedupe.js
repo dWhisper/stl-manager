@@ -40,7 +40,7 @@ function newNode(path, depth, parent, real, isZip) {
     inZip: !!parent && (parent.isZip || parent.inZip),
     top: null,            // depth-1 (creator) ancestor, or itself at depth 1
     children: new Map(), files: [],
-    size: 0, fileCount: 0, unkeyed: false,
+    size: 0, fileCount: 0, looseCount: 0, unkeyed: false,
     keys: null, sig: null, thumbIds: [],
     folderMember: false, underFolder: false, containedA: false, suppressed: false,
   };
@@ -90,6 +90,7 @@ function summarise(nodes, rows) {
       const r = rows[i];
       n.size += r.size;
       n.fileCount++;
+      if (!r.zipLogical) n.looseCount++; // what find can see on disk
       if (r.contentKey == null) n.unkeyed = true;
       else if (keys) keys.push(r.contentKey);
       if (r.hasThumb && n.thumbIds.length < MAX_THUMBS) n.thumbIds.push(r.id);
@@ -97,6 +98,7 @@ function summarise(nodes, rows) {
     for (const c of kids) {
       n.size += c.size;
       n.fileCount += c.fileCount;
+      n.looseCount += c.looseCount;
       if (c.unkeyed) n.unkeyed = true;
       if (keys) for (const k of c.keys) keys.push(k);
       for (const t of c.thumbIds) if (n.thumbIds.length < MAX_THUMBS) n.thumbIds.push(t);
@@ -287,14 +289,14 @@ const sortRowIdx = (rows, idx) =>
 function nodeMember(n, isLinked) {
   return {
     path: n.path, real: n.real, isZip: n.isZip, inZip: n.inZip, isFolder: true,
-    size: n.size, fileCount: n.fileCount, thumbIds: n.thumbIds, linked: isLinked(n.path),
+    size: n.size, fileCount: n.fileCount, looseCount: n.looseCount, thumbIds: n.thumbIds, linked: isLinked(n.path),
   };
 }
 
 function fileMember(r, isLinked) {
   return {
     path: r.logical, real: r.real, isZip: false, inZip: !!r.zipLogical, isFolder: false,
-    size: r.size, fileCount: 1, thumbIds: r.hasThumb ? [r.id] : [], linked: isLinked(r.logical),
+    size: r.size, fileCount: 1, looseCount: r.zipLogical ? 0 : 1, thumbIds: r.hasThumb ? [r.id] : [], linked: isLinked(r.logical),
   };
 }
 

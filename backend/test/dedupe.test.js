@@ -237,3 +237,25 @@ test('signature is stable across row order and changes with members', () => {
   assert.notEqual(three.folders[0].signature, one.folders[0].signature);
   assert.notEqual(three.files[0].signature, one.files[0].signature);
 });
+
+test('looseCount counts only files outside zips', () => {
+  const r = build([
+    row('A/X/a.stl', 'k1'), row('A/X/P.zip/b.stl', 'k2'), row('A/X/P.zip/c.stl', 'k3'),
+    row('B/X/a.stl', 'k1'), row('B/X/P.zip/b.stl', 'k2'), row('B/X/P.zip/c.stl', 'k3'),
+  ]);
+  assert.equal(r.folders.length, 1);
+  for (const m of r.folders[0].members) {
+    assert.equal(m.fileCount, 3);
+    assert.equal(m.looseCount, 1);
+  }
+  const z = build([
+    row('A/Pack.zip/a.stl', 'k1'), row('A/Pack.zip/b.stl', 'k2'),
+    row('B/Pack/a.stl', 'k1'),     row('B/Pack/b.stl', 'k2'),
+  ]).folders[0].members;
+  assert.deepEqual(z.map(m => [m.path, m.looseCount]), [['A/Pack.zip', 0], ['B/Pack', 2]]);
+  const f = build([
+    row('A/X/a.stl', 'k1'), row('A/X/o.stl', 'k5'),
+    row('B/P.zip/a.stl', 'k1'), row('B/P.zip/q.stl', 'k6'),
+  ]).files[0].members;
+  assert.deepEqual(f.map(m => m.looseCount), [1, 0]);
+});
