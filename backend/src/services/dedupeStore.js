@@ -38,14 +38,15 @@ function buildAll() {
   return out;
 }
 
-export function getGroups() {
+// fresh: skip the recheck window (the script export must not read stale groups)
+export function getGroups({ fresh = false } = {}) {
   const now = Date.now();
-  if (groups && now - checkedAt < RECHECK_MS) return groups;
+  if (!fresh && groups && now - checkedAt < RECHECK_MS) return groups;
   checkedAt = now;
   const db = getDb();
-  const f = db.prepare(`SELECT COUNT(*) n, MAX(created_at) c, COUNT(content_key) k, COUNT(geo_key) g FROM files`).get();
+  const f = db.prepare(`SELECT COUNT(*) n, MAX(created_at) c, COUNT(content_key) k, COUNT(geo_key) g, MAX(updated_at) u FROM files`).get();
   const l = db.prepare(`SELECT MAX(created_at) c FROM model_links`).get();
-  const sig = `${f.n}|${f.c}|${f.k}|${f.g}|${l.c}`;
+  const sig = `${f.n}|${f.c}|${f.k}|${f.g}|${f.u}|${l.c}`;
   if (!groups || sig !== signature) {
     groups = buildAll();
     signature = sig;

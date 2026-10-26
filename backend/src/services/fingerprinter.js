@@ -28,7 +28,7 @@ async function fingerprintOne(id) {
   try {
     const crc = await crc32File(row.path);
     // Size and mtime guard: a file that changed mid-read is left for its requeue
-    db.prepare(`UPDATE files SET content_key = ? WHERE id = ? AND size = ? AND modified_at IS ?`)
+    db.prepare(`UPDATE files SET content_key = ?, updated_at = datetime('now') WHERE id = ? AND size = ? AND modified_at IS ?`)
       .run(contentKey(crc, row.size), id, row.size, row.modified_at);
   } catch (err) {
     db.prepare(`UPDATE files SET fingerprint_error = ? WHERE id = ?`).run(err.message, id);

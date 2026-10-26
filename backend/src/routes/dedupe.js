@@ -63,7 +63,7 @@ router.delete('/decisions/:signature', (req, res) => {
 router.get('/script', (req, res) => {
   const mode = req.query.mode ?? 'mv';
   if (mode !== 'mv' && mode !== 'rm') return res.status(400).json({ error: "mode must be 'mv' or 'rm'" });
-  const g = getGroups();
+  const g = getGroups({ fresh: true });
   const zipSize = (real) => {
     try { return fs.statSync(real).size; } catch { return null; }
   };
