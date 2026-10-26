@@ -8,8 +8,9 @@ import { queueThumbnail, queueAll } from './thumbnailer.js';
 
 const STL_ROOT = process.env.STL_ROOT || '/nas';
 // Skip hidden files/dirs, NAS system dirs (@eaDir, @tmp, ...) and the UGOS/Synology
-// recycle bin and snapshots. Other "#" names are real folders (e.g. "#32 Sky Dominion").
-const IGNORED = /(^|[/\\])(\.|@|__MACOSX([/\\]|$)|#(recycle|snapshot)([/\\]|$))/i;
+// recycle bin and snapshots, and _duplicates (where cleanup moves removed copies).
+// Other "#" names are real folders (e.g. "#32 Sky Dominion").
+const IGNORED = /(^|[/\\])(\.|@|__MACOSX([/\\]|$)|_duplicates([/\\]|$)|#(recycle|snapshot)([/\\]|$))/i;
 const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif']);
 const STL_EXTS = /\.(stl|3mf|obj)$/i;
 const ZIP_EXT  = /\.zip$/i;
@@ -62,6 +63,9 @@ export function startWatcher(onReady) {
           size        = excluded.size,
           modified_at = excluded.modified_at,
           thumb_error = CASE WHEN files.modified_at IS excluded.modified_at THEN files.thumb_error END,
+          content_key = CASE WHEN files.modified_at IS excluded.modified_at AND files.size IS excluded.size THEN files.content_key END,
+          geo_key = CASE WHEN files.modified_at IS excluded.modified_at AND files.size IS excluded.size THEN files.geo_key END,
+          fingerprint_error = CASE WHEN files.modified_at IS excluded.modified_at AND files.size IS excluded.size THEN files.fingerprint_error END,
           updated_at  = datetime('now')
         RETURNING id, thumbnail_path, thumb_error
       `).get({ id, path: filePath, name: path.basename(filePath), size: stat.size, modified_at: stat.mtime.toISOString() });

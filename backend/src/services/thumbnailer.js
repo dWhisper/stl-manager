@@ -123,8 +123,9 @@ async function generateThumbnail(fileId) {
   fs.mkdirSync(THUMB_DIR, { recursive: true });
   const thumbPath = path.join(THUMB_DIR, `${fileId}.jpg`);
 
-  if (!(await renderInWorker(stlPath, thumbPath))) throw new Error('STL has no readable triangles');
+  const geoKey = await renderInWorker(stlPath, thumbPath);
+  if (!geoKey) throw new Error('STL has no readable triangles');
 
-  db.prepare(`UPDATE files SET thumbnail_path = ?, thumb_error = NULL, updated_at = datetime('now') WHERE id = ?`)
-    .run(thumbPath, fileId);
+  db.prepare(`UPDATE files SET thumbnail_path = ?, geo_key = ?, thumb_error = NULL, updated_at = datetime('now') WHERE id = ?`)
+    .run(thumbPath, geoKey, fileId);
 }

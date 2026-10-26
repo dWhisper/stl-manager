@@ -4,6 +4,7 @@ import { pipeline } from 'stream/promises';
 import { createHash, randomUUID } from 'crypto';
 import yauzl from 'yauzl';
 import { getDb } from '../db/schema.js';
+import { contentKey } from './crc32.js';
 
 const STL_EXTS = /\.(stl|3mf|obj)$/i;
 // macOS zips carry __MACOSX/ folders of "._name.stl" metadata stubs that aren't real models
@@ -21,7 +22,7 @@ export function decodeZipPath(virtualPath) {
   return { zipSource: virtualPath.slice(0, sep), zipEntry: virtualPath.slice(sep + 2) };
 }
 
-function cachePathFor(zipSource, zipEntry) {
+export function cachePathFor(zipSource, zipEntry) {
   const key = createHash('sha1').update(`${zipSource}::${zipEntry}`).digest('hex');
   return path.join(CACHE_DIR, key + path.extname(zipEntry).toLowerCase());
 }
@@ -81,7 +82,7 @@ export async function scanZip(zipPath) {
     zip = await openZip(zipPath);
     await walkEntries(zip, (e) => {
       if (!e.fileName.endsWith('/') && STL_EXTS.test(e.fileName) && !ZIP_JUNK.test(e.fileName)) {
-        stlEntries.push({ path: e.fileName, size: e.uncompressedSize, modified: e.getLastModDate() });
+        stlEntries.push({ path: e.fileName, size: e.uncompressedSize, crc: e.crc32, modified: e.getLastModDate() });
       }
       return false;
     });
@@ -93,8 +94,8 @@ export async function scanZip(zipPath) {
   }
 
   const upsert = db.prepare(`
-    INSERT INTO files (id, path, name, size, modified_at, zip_source, zip_entry)
-    VALUES (@id, @path, @name, @size, @modified_at, @zip_source, @zip_entry)
+    INSERT INTO files (id, path, name, size, modified_at, zip_source, zip_entry, content_key)
+    VALUES (@id, @path, @name, @size, @modified_at, @zip_source, @zip_entry, @content_key)
     ON CONFLICT(path) DO UPDATE SET
       name        = excluded.name,
       size        = excluded.size,
@@ -102,6 +103,9 @@ export async function scanZip(zipPath) {
       zip_source  = excluded.zip_source,
       zip_entry   = excluded.zip_entry,
       thumb_error = CASE WHEN files.modified_at IS excluded.modified_at THEN files.thumb_error END,
+      content_key = excluded.content_key,
+      geo_key = CASE WHEN files.modified_at IS excluded.modified_at AND files.size IS excluded.size THEN files.geo_key END,
+      fingerprint_error = CASE WHEN files.modified_at IS excluded.modified_at AND files.size IS excluded.size THEN files.fingerprint_error END,
       updated_at  = datetime('now')
     RETURNING id, thumbnail_path, thumb_error
   `);
@@ -125,6 +129,7 @@ export async function scanZip(zipPath) {
         modified_at: (modified instanceof Date && !isNaN(modified) ? modified : new Date()).toISOString(),
         zip_source: zipPath,
         zip_entry: entry.path,
+        content_key: contentKey(entry.crc, entry.size),
       });
       if (row) upserted.push(row);
     }

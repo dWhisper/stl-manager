@@ -141,6 +141,23 @@ function migrate(db) {
   // The MMF tribe (and tier) an item was released to, from objectPreviews
   if (!purchaseCols.includes('tribe_id')) db.exec(`ALTER TABLE purchases ADD COLUMN tribe_id INTEGER`);
   if (!purchaseCols.includes('tier_id')) db.exec(`ALTER TABLE purchases ADD COLUMN tier_id INTEGER`);
+  // Content fingerprint (zip CRC32:size, or hash of the file) and geometry fingerprint of the mesh
+  if (!cols.includes('content_key')) db.exec(`ALTER TABLE files ADD COLUMN content_key TEXT`);
+  if (!cols.includes('geo_key')) db.exec(`ALTER TABLE files ADD COLUMN geo_key TEXT`);
+  // Why the last fingerprint attempt failed; set means "don't retry until the file changes"
+  if (!cols.includes('fingerprint_error')) db.exec(`ALTER TABLE files ADD COLUMN fingerprint_error TEXT`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_files_content_key ON files(content_key)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_files_geo_key ON files(geo_key)`);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS dedupe_decisions (
+      signature   TEXT PRIMARY KEY,   -- group signature from the engine
+      kind        TEXT NOT NULL,      -- 'files' | 'folders' | 'contained' | 'geometry'
+      action      TEXT NOT NULL,      -- 'keep' | 'not_duplicate'
+      keeper_path TEXT,               -- logical path of the member to keep
+      members     TEXT NOT NULL,      -- JSON array of member logical paths at decision time
+      decided_at  TEXT DEFAULT (datetime('now'))
+    );
+  `);
   if (!cols.includes('zip_source')) return;
   db.exec(`CREATE INDEX IF NOT EXISTS idx_files_zip_source ON files(zip_source)`);
 }
