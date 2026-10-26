@@ -313,7 +313,43 @@ The browser on the host machine intercepts these links and hands off to the inst
 
 ---
 
-## 7. Data persistence
+## 7. Duplicates
+
+The **Duplicates** page (linked from the header, next to Purchases) finds copies of the same files, folders and zips in your library so you can pick one to keep. The app never changes the library: it is mounted read-only. It finds duplicates and exports a shell script that you run yourself to remove the extra copies.
+
+Every file gets a CRC32 + size fingerprint. Zip entries are read from each zip's directory; loose files are hashed in the background after startup, which takes hours on a large library. The page shows how many files are still pending, and groups are incomplete until that reaches zero. STL files also get a geometry fingerprint (triangle count, bounding box, surface area and volume) to find the same model saved in different bytes.
+
+The four tabs:
+
+- **Folders & zips**: identical folders or zips, including a zip next to its own extracted folder.
+- **Contained**: a folder whose files all exist in a bigger folder.
+- **Files**: identical files.
+- **Likely same**: same geometry, different bytes. This is a heuristic, so check the thumbnails before keeping anything.
+
+For each group, pick the copy to keep, or mark it **Not a duplicate** to hide it. The app suggests a keeper, but a suggestion is not saved until you pick one. Zip-vs-folder groups have no suggestion.
+
+### Exporting the script
+
+Click **Export** and choose a mode:
+
+- **mv** (default) moves each removed copy into `_duplicates/` at the library root, keeping its path. This is reversible: delete `_duplicates/` once you are satisfied.
+- **rm** deletes removed copies permanently.
+
+Every action checks that the kept copy still exists and that the removed copy is unchanged. If either check fails, the script prints `SKIP` and continues. Files inside a zip are never removed one by one; those cases are listed as `# MANUAL` comments for you to handle.
+
+Run the script from your computer:
+
+```bash
+ssh nas 'bash -s' < dedupe-mv.sh
+```
+
+or copy it to the NAS and run it there with `bash`.
+
+`DEDUPE_HOST_ROOT` sets the library path on the host. It defaults to `/volume1/3D Files`. Set it as a backend environment variable before exporting, or pass it when running the script, e.g. `ssh nas "DEDUPE_HOST_ROOT='/volume1/Other' bash -s" < dedupe-mv.sh`.
+
+---
+
+## 8. Data persistence
 
 All persistent data lives in `./data/` relative to the `docker-compose.yml` file:
 
@@ -328,7 +364,7 @@ data/
 
 ---
 
-## 8. Updating
+## 9. Updating
 
 ```bash
 git pull
@@ -339,7 +375,7 @@ The database schema applies additive migrations automatically on startup — exi
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 **Files aren't appearing**
 
