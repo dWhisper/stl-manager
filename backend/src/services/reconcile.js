@@ -205,6 +205,7 @@ function loadPurchases(platform) {
     downloadUrl: r.download_url, thumbnailUrl: r.thumbnail_url,
     fileNames: r.file_names ? JSON.parse(r.file_names) : [],
     purchasedAt: r.purchased_at, source: r.source, ignored: !!r.ignored,
+    tribeId: r.tribe_id, tierId: r.tier_id,
   }));
 }
 
@@ -269,22 +270,40 @@ export function reconcile(platform) {
 // A full sync replaces the list; an import of some pages (merge) only adds.
 export function savePurchases(platform, list, { merge = false } = {}) {
   const db = getDb();
-  const upsert = db.prepare(`
-    INSERT INTO purchases (platform, external_id, name, creator, url, download_url, thumbnail_url, file_names, purchased_at, source, synced_at)
-    VALUES (@platform, @externalId, @name, @creator, @url, @downloadUrl, @thumbnailUrl, @fileNames, @purchasedAt, @source, datetime('now'))
-    ON CONFLICT(platform, external_id) DO UPDATE SET
+  const insert = `
+    INSERT INTO purchases (platform, external_id, name, creator, url, download_url, thumbnail_url, file_names, purchased_at, source, tribe_id, tier_id, synced_at)
+    VALUES (@platform, @externalId, @name, @creator, @url, @downloadUrl, @thumbnailUrl, @fileNames, @purchasedAt, @source, @tribeId, @tierId, datetime('now'))
+    ON CONFLICT(platform, external_id) DO UPDATE SET`;
+  const upsert = db.prepare(`${insert}
       name = excluded.name, creator = excluded.creator, url = excluded.url,
       download_url = excluded.download_url, thumbnail_url = excluded.thumbnail_url,
       file_names = excluded.file_names, purchased_at = excluded.purchased_at,
-      source = COALESCE(excluded.source, source), synced_at = excluded.synced_at
+      source = COALESCE(excluded.source, source),
+      tribe_id = COALESCE(excluded.tribe_id, tribe_id), tier_id = COALESCE(excluded.tier_id, tier_id),
+      synced_at = excluded.synced_at
+  `);
+  // Partial items (an MMF object known only from its preview) have no files or
+  // links, so they only fill in what an earlier full import left empty
+  const fill = db.prepare(`${insert}
+      creator = COALESCE(creator, excluded.creator), purchased_at = COALESCE(purchased_at, excluded.purchased_at),
+      source = COALESCE(source, excluded.source),
+      tribe_id = COALESCE(excluded.tribe_id, tribe_id), tier_id = COALESCE(excluded.tier_id, tier_id),
+      synced_at = excluded.synced_at
   `);
   // Newest first, so an item bought twice keeps its latest download link
+  // Partial items go after the full ones and always run, since filling in is harmless
   const seen = new Set();
+  const ordered = [...list.filter((p) => !p.partial), ...list.filter((p) => p.partial)];
   db.transaction(() => {
-    for (const p of list) {
-      if (!p.externalId || seen.has(p.externalId)) continue;
+    for (const p of ordered) {
+      if (!p.externalId || (!p.partial && seen.has(p.externalId))) continue;
       seen.add(p.externalId);
-      upsert.run({ ...p, platform, source: p.source ?? null, fileNames: JSON.stringify(p.fileNames ?? []) });
+      (p.partial ? fill : upsert).run({
+        platform, externalId: p.externalId, name: p.name, creator: p.creator ?? null, url: p.url ?? null,
+        downloadUrl: p.downloadUrl ?? null, thumbnailUrl: p.thumbnailUrl ?? null, purchasedAt: p.purchasedAt ?? null,
+        source: p.source ?? null, tribeId: p.tribeId ?? null, tierId: p.tierId ?? null,
+        fileNames: JSON.stringify(p.fileNames ?? []),
+      });
     }
     // Drop items no longer on the account (refunds); their model_links stay
     if (!merge) {

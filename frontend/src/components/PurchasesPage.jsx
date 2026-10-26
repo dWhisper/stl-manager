@@ -237,6 +237,8 @@ function ImportPanel({ platform, onImported, onClose }) {
       <div style={{ ...s.dim, lineHeight: 1.6 }}>
         Open <a href={MMF_DATA_URL} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>{MMF_DATA_URL}</a> (and{' '}
         <code>?page=2</code>, <code>?page=3</code>…), save each as raw JSON and upload them, or copy one and paste it below.
+        The <a href="https://www.myminifactory.com/api/data-library/objectPreviews" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>object list</a> works
+        too: it adds every item with its tribe, but without file names, so those match by name only.
         Importing adds to what's already here.
       </div>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>

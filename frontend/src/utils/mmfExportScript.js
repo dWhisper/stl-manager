@@ -34,8 +34,20 @@ export const MMF_EXPORT_SCRIPT = `(async () => {
 
   const out = new Map();
   const add = (objects, source) => {
-    for (const o of objects) if (o && o.id != null && !out.has(o.id)) out.set(o.id, { ...o, _source: source });
+    for (const o of objects) if (o && o.id != null && !out.has(String(o.id))) out.set(String(o.id), { ...o, _source: source });
   };
+
+  // Every object in the library with how it got there (its tribe and tier),
+  // but no files. The import reads tribe ids from it.
+  console.log('MMF export: object list…');
+  let previews = [];
+  const failures = [], empty = [];
+  try {
+    previews = await get(base + '/api/data-library/objectPreviews');
+    if (!Array.isArray(previews)) previews = [];
+  } catch (e) {
+    failures.push({ group: 'Object list', error: e.message });
+  }
 
   console.log('MMF export: purchases…');
   add(await all(base + '/data-library/purchases'), 'Purchases');
@@ -49,9 +61,19 @@ export const MMF_EXPORT_SCRIPT = `(async () => {
   for (const u of await all(base + '/data-library/shared'))
     for (const g of (u.groups && u.groups.items) || []) groups.push({ g, source: 'Shared by ' + u.name });
 
+  // Monthly tribe drops are groups named {tier}-{yearmonth}; the tribes list
+  // doesn't always offer them, so add the ones the object list mentions
+  const known = new Set(groups.map(({ g }) => String(g.id)));
+  for (const p of previews) {
+    const m = /tier:(\\d+);yearmonth:(\\d{4})(\\d{2})/.exec(p.release || '');
+    const id = m && m[1] + '-' + m[2] + m[3];
+    if (!id || known.has(id)) continue;
+    known.add(id);
+    groups.push({ g: { id, name: m[2] + '-' + m[3] }, source: 'Tribe: ' + p.creatorName });
+  }
+
   // "All" entries repeat the groups beside them
   const real = groups.filter(({ g }) => !String(g.id).startsWith('all/'));
-  const failures = [], empty = [];
   for (let i = 0; i < real.length; i++) {
     const { g, source } = real[i];
     const url = (g.apis && g.apis.getObjects && g.apis.getObjects.url) || base + '/data-library/group/' + encodeURIComponent(g.id);
@@ -65,7 +87,7 @@ export const MMF_EXPORT_SCRIPT = `(async () => {
     if ((i + 1) % 10 === 0 || i === real.length - 1) console.log('MMF export: group ' + (i + 1) + '/' + real.length + ', ' + out.size + ' items');
   }
 
-  const file = { total_count: out.size, items: [...out.values()], export: { at: new Date().toISOString(), groups: real.length, failures, empty } };
+  const file = { total_count: out.size, items: [...out.values()], previews, export: { at: new Date().toISOString(), groups: real.length, failures, empty } };
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
   a.download = 'mmf-library.json';

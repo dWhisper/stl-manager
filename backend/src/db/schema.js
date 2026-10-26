@@ -138,6 +138,9 @@ function migrate(db) {
   const purchaseCols = db.pragma('table_info(purchases)').map((c) => c.name);
   // Where in the platform's library an item came from (an MMF tribe, campaign...)
   if (!purchaseCols.includes('source')) db.exec(`ALTER TABLE purchases ADD COLUMN source TEXT`);
+  // The MMF tribe (and tier) an item was released to, from objectPreviews
+  if (!purchaseCols.includes('tribe_id')) db.exec(`ALTER TABLE purchases ADD COLUMN tribe_id INTEGER`);
+  if (!purchaseCols.includes('tier_id')) db.exec(`ALTER TABLE purchases ADD COLUMN tier_id INTEGER`);
   if (!cols.includes('zip_source')) return;
   db.exec(`CREATE INDEX IF NOT EXISTS idx_files_zip_source ON files(zip_source)`);
 }
