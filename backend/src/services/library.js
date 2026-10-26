@@ -41,7 +41,7 @@ function newNode(nodePath, name, parent) {
 }
 
 // Path inside the library, with a zip treated as a folder: "Creator/Pack.zip/Model/x.stl"
-function logicalPath(row) {
+export function logicalPath(row) {
   const rel = (p) => (p.startsWith(STL_ROOT + '/') ? p.slice(STL_ROOT.length + 1) : p);
   return row.zip_source ? `${rel(row.zip_source)}/${row.zip_entry}` : rel(row.path);
 }

@@ -11,6 +11,7 @@ import integrationsRouter from './routes/integrations.js';
 import libraryRouter      from './routes/library.js';
 import reconcileRouter    from './routes/reconcile.js';
 import linksRouter        from './routes/links.js';
+import dedupeRouter       from './routes/dedupe.js';
 import { startWatcher, getWatcherStatus, reconcile } from './services/scanner.js';
 import { queueAll, getPendingCount, queueGeoBackfill, getGeoPending } from './services/thumbnailer.js';
 import { startFingerprinter, getFingerprintPending } from './services/fingerprinter.js';
@@ -32,6 +33,7 @@ app.use('/api/integrations', integrationsRouter);
 app.use('/api/library',      libraryRouter);
 app.use('/api/reconcile',    reconcileRouter);
 app.use('/api/links',        linksRouter);
+app.use('/api/dedupe',       dedupeRouter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
