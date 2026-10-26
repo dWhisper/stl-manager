@@ -18,7 +18,7 @@ const FILTERS = [
   { id: 'all',       label: 'All' },
 ];
 
-const MAX_PAGE_SIZE = 100;  // the API clamps limit to this
+const PAGE_SIZES = [24, 48, 96];  // the API clamps limit to 100
 
 const s = {
   wrapper: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', minWidth: 0 },
@@ -52,7 +52,7 @@ const s = {
   cardHead: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 12 },
   member: {
     display: 'flex', gap: 10, alignItems: 'center', padding: 6, borderRadius: 8,
-    background: 'var(--surface2)', border: '1px solid var(--border)', cursor: 'pointer',
+    background: 'var(--surface2)', border: '1px solid var(--border)',
   },
   thumbs: { display: 'flex', gap: 4, flexShrink: 0 },
   thumb: {
@@ -91,8 +91,11 @@ function Thumbs({ ids }) {
 function Member({ member, kind, checked, disabled, onPick, onOpen }) {
   const Icon = member.isFolder ? Folder : member.isZip ? FolderArchive : FileText;
   return (
-    <label style={s.member}>
-      <input type="radio" checked={checked} disabled={disabled} onChange={onPick} title="Keep this one" />
+    <div style={s.member}>
+      <label style={{ ...s.meta, cursor: 'pointer', flexShrink: 0 }}>
+        <input type="radio" checked={checked} disabled={disabled} onChange={onPick} />
+        Keep
+      </label>
       <Thumbs ids={member.thumbIds ?? []} />
       <div style={s.main}>
         <div style={s.path} title={member.path}>{member.path}</div>
@@ -110,18 +113,18 @@ function Member({ member, kind, checked, disabled, onPick, onOpen }) {
         type="button"
         style={s.btn()}
         title="Open in the library"
-        onClick={(e) => { e.preventDefault(); onOpen(member.isFolder ? member.path : dirname(member.path)); }}
+        onClick={() => onOpen(member.isFolder ? member.path : dirname(member.path))}
       >
         <ExternalLink size={12} /> Library
       </button>
-    </label>
+    </div>
   );
 }
 
 function GroupCard({ group, onChanged, onNavigate }) {
   const { kind, signature, members, decision } = group;
   const geometry = kind === 'geometry';
-  const initial = decision?.keeper_path ?? (geometry ? null : group.suggested) ?? null;
+  const initial = decision ? (decision.keeper_path ?? null) : (geometry ? null : group.suggested ?? null);
   const [picked, setPicked] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
@@ -251,7 +254,8 @@ export default function DuplicatesPage({ onNavigate }) {
         total={list.data?.total ?? 0}
         noun="groups"
         onPage={setPage}
-        onPageSize={(n) => setPageSize(Math.min(n, MAX_PAGE_SIZE))}
+        sizes={PAGE_SIZES}
+        onPageSize={setPageSize}
       />
     </div>
   );

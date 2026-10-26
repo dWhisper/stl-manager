@@ -39,7 +39,7 @@ export function usePageSize() {
   return [pageSize, save];
 }
 
-export default function Pagination({ page, pageSize, total, noun = 'tiles', onPage, onPageSize }) {
+export default function Pagination({ page, pageSize, total, noun = 'tiles', sizes = PAGE_SIZES, onPage, onPageSize }) {
   const totalPages = Math.max(Math.ceil(total / pageSize), 1);
   const firstShown = total ? (page - 1) * pageSize + 1 : 0;
   const lastShown  = Math.min(page * pageSize, total);
@@ -63,7 +63,7 @@ export default function Pagination({ page, pageSize, total, noun = 'tiles', onPa
       <label style={s.group}>
         {noun[0].toUpperCase() + noun.slice(1)} per page
         <select style={s.select} value={pageSize} onChange={(e) => changePageSize(Number(e.target.value))}>
-          {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+          {sizes.map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
       </label>
     </div>
