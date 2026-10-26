@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { Worker } from 'worker_threads';
 import { getDb } from '../db/schema.js';
-import { extractToCache, cachePathFor } from './zipScanner.js';
+import { extractToCache, freshCachePath, extractToFile, privateCachePath } from './zipScanner.js';
 
 const THUMB_DIR  = process.env.THUMB_DIR  || '/data/thumbnails';
 // Each worker renders one STL at a time on its own thread
@@ -170,14 +170,15 @@ async function generateGeoKey(fileId) {
   if (!row) return;
 
   let stlPath = row.path;
-  let extracted = null;   // set only when this job created the cache file
+  let privateCopy = null;   // this job's own extraction; the shared cache is never deleted from here
   try {
     if (row.zip_source) {
       if (!fs.existsSync(row.zip_source)) return;
-      const cached = cachePathFor(row.zip_source, row.zip_entry);
-      const existed = fs.existsSync(cached);
-      stlPath = await extractToCache(row.zip_source, row.zip_entry, row.size);
-      if (!existed) extracted = stlPath;
+      stlPath = freshCachePath(row.zip_source, row.zip_entry, row.size);
+      if (!stlPath) {
+        privateCopy = stlPath = privateCachePath(row.zip_entry);
+        await extractToFile(row.zip_source, row.zip_entry, privateCopy);
+      }
     } else if (!fs.existsSync(stlPath)) return;
 
     const geoKey = await renderInWorker(stlPath, null, 'geo');
@@ -185,6 +186,6 @@ async function generateGeoKey(fileId) {
     db.prepare(`UPDATE files SET geo_key = ?, updated_at = datetime('now') WHERE id = ?`).run(geoKey, fileId);
   } finally {
     // Backfill must not bloat the cache; thumbnail renders keep theirs for the viewer
-    if (extracted) fs.rmSync(extracted, { force: true });
+    if (privateCopy) fs.rmSync(privateCopy, { force: true });
   }
 }

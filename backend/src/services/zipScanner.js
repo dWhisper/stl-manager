@@ -147,29 +147,27 @@ export function removeZipEntries(zipPath) {
   return changes;
 }
 
-// Extract a zip entry to the cache dir and return the cache path.
-// If the cache file already exists, is complete (matches expectedSize when
-// given) and the zip hasn't been modified since it was cached, skip extraction.
-export async function extractToCache(zipSource, zipEntry, expectedSize) {
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
-
+// The cache path if its file is complete (matches expectedSize when given) and the
+// zip hasn't been modified since it was cached, else null.
+// Older builds could leave truncated files behind, so check the size too.
+export function freshCachePath(zipSource, zipEntry, expectedSize) {
   const cachePath = cachePathFor(zipSource, zipEntry);
+  if (!fs.existsSync(cachePath)) return null;
+  const cached   = fs.statSync(cachePath);
+  const zipTime  = fs.statSync(zipSource).mtimeMs;
+  const complete = expectedSize == null || cached.size === expectedSize;
+  return zipTime <= cached.mtimeMs && complete ? cachePath : null;
+}
 
-  if (fs.existsSync(cachePath)) {
-    const cached  = fs.statSync(cachePath);
-    const zipTime = fs.statSync(zipSource).mtimeMs;
-    // Older builds could leave truncated files behind, so check the size too
-    const complete = expectedSize == null || cached.size === expectedSize;
-    if (zipTime <= cached.mtimeMs && complete) return cachePath;
-  }
-
+// Extract a zip entry to destPath. Written beside it and renamed, so an
+// interrupted extraction never looks complete.
+export async function extractToFile(zipSource, zipEntry, destPath) {
   const zip = await openZip(zipSource);
   try {
     const entry = await walkEntries(zip, (e) => e.fileName === zipEntry);
     if (!entry) throw new Error(`Entry "${zipEntry}" not found in ${zipSource}`);
 
-    // Write beside the cache file and rename, so an interrupted extraction never looks fresh
-    const tmpPath = `${cachePath}.${process.pid}.${randomUUID()}.tmp`;
+    const tmpPath = `${destPath}.${process.pid}.${randomUUID()}.tmp`;
     try {
       const stream = await new Promise((resolve, reject) =>
         zip.openReadStream(entry, (err, s) => (err ? reject(err) : resolve(s)))
@@ -179,7 +177,7 @@ export async function extractToCache(zipSource, zipEntry, expectedSize) {
       if (written !== entry.uncompressedSize) {
         throw new Error(`Extracted ${written} of ${entry.uncompressedSize} bytes from ${zipEntry}`);
       }
-      fs.renameSync(tmpPath, cachePath);
+      fs.renameSync(tmpPath, destPath);
     } catch (err) {
       fs.rmSync(tmpPath, { force: true });
       throw err;
@@ -187,6 +185,21 @@ export async function extractToCache(zipSource, zipEntry, expectedSize) {
   } finally {
     zip.close();
   }
+}
 
+// Extract a zip entry to the shared cache dir and return the cache path,
+// skipping extraction when a fresh cache file already exists.
+export async function extractToCache(zipSource, zipEntry, expectedSize) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  const fresh = freshCachePath(zipSource, zipEntry, expectedSize);
+  if (fresh) return fresh;
+  const cachePath = cachePathFor(zipSource, zipEntry);
+  await extractToFile(zipSource, zipEntry, cachePath);
   return cachePath;
+}
+
+// A private path in the cache dir for a job that must not touch the shared cache file
+export function privateCachePath(zipEntry) {
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  return path.join(CACHE_DIR, `${randomUUID()}.geo.${process.pid}.tmp${path.extname(zipEntry).toLowerCase()}`);
 }
