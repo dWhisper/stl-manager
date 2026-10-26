@@ -143,7 +143,7 @@ function GroupCard({ group, onChanged, onNavigate }) {
       <div style={s.cardHead}>
         <strong>{formatBytes(group.reclaimable)} reclaimable</strong>
         <span style={s.dim}>{members.length} copies</span>
-        {geometry && <span style={s.warn}>Likely the same, check the thumbnails</span>}
+        {geometry && <span style={s.warn}>Likely the same (mirrored left/right copies match too), check the thumbnails</span>}
         {decided && (
           <span style={s.badge('#10b981')}>
             {decision.action === 'keep' ? 'Keeping one' : 'Not a duplicate'}
@@ -196,7 +196,7 @@ export default function DuplicatesPage({ onNavigate }) {
   );
 
   const sum = summary.data;
-  const reclaimable = sum ? Object.values(sum.kinds).reduce((n, k) => n + (k.reclaimable ?? 0), 0) : 0;
+  const reclaimable = sum ? Object.entries(sum.kinds).reduce((n, [k, v]) => (k === 'geometry' ? n : n + (v.reclaimable ?? 0)), 0) : 0;
   const pending = sum ? (sum.fingerprintPending ?? 0) + (sum.geoPending ?? 0) : 0;
   const groups = list.data?.groups ?? [];
 
@@ -207,7 +207,7 @@ export default function DuplicatesPage({ onNavigate }) {
     <div style={s.wrapper}>
       <div style={s.toolbar}>
         <span style={s.title}>Duplicates</span>
-        {sum && <span style={s.dim}>{formatBytes(reclaimable)} reclaimable</span>}
+        {sum && <span style={s.dim}>{formatBytes(reclaimable)} reclaimable, excluding likely-same</span>}
         {pending > 0 && <span style={s.warn}>{formatCount(pending)} files still being fingerprinted</span>}
         <div style={{ flex: 1 }} />
         <div style={s.tabs}>
@@ -215,7 +215,7 @@ export default function DuplicatesPage({ onNavigate }) {
             <span key={m} style={s.tab(mode === m)} onClick={() => setMode(m)}>{m}</span>
           ))}
         </div>
-        {mode === 'rm' && <span style={s.warn}>deletes permanently</span>}
+        {mode === 'rm' && <span style={s.warn}>deletes single files permanently; folders and zips are still moved to _duplicates</span>}
         <a style={s.btn('primary')} href={api.dedupe.scriptUrl(mode)} download>
           <Download size={12} /> Export script
         </a>

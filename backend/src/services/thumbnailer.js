@@ -59,6 +59,8 @@ export function getGeoPending() {
 function drainQueue() {
   while (active < WORKERS && (priority.size || queue.size || geoQueue.size)) {
     if (!priority.size && !queue.size) {
+      // Leave one worker free so a priority thumbnail never waits behind the backfill
+      if (WORKERS > 1 && activeGeo >= WORKERS - 1) break;
       const [id] = geoQueue;
       geoQueue.delete(id);
       active++;
