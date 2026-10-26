@@ -71,7 +71,7 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, height: '100vh', overflow: 'hidden' }}>
-      <Header query={searchQuery} setQuery={setSearchQuery} />
+      <Header query={searchQuery} setQuery={setSearchQuery} onHome={() => { browse(''); setSelectedId(null); }} />
       <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
         <Sidebar
           filter={filter}

@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { Search, X, Box } from 'lucide-react';
 
-export default function Header({ query, setQuery }) {
+export default function Header({ query, setQuery, onHome }) {
   const ref = useRef();
 
   // Ctrl+K / Cmd+K focuses the search bar
@@ -26,10 +26,14 @@ export default function Header({ query, setQuery }) {
       height: 52, background: 'var(--surface)', borderBottom: '1px solid var(--border)',
       display: 'flex', alignItems: 'center', padding: '0 16px', gap: 16, flexShrink: 0, zIndex: 10,
     }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent)', fontWeight: 700, fontSize: 15, letterSpacing: '-0.3px', minWidth: 140 }}>
+      <a
+        href="#/library/"
+        onClick={(e) => { e.preventDefault(); onHome(); }}
+        style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--accent)', fontWeight: 700, fontSize: 15, letterSpacing: '-0.3px', minWidth: 140, textDecoration: 'none' }}
+      >
         <Box size={17} />
         STL Manager
-      </div>
+      </a>
 
       <div style={{
         flex: 1, maxWidth: 560, display: 'flex', alignItems: 'center', gap: 8,
