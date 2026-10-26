@@ -1,5 +1,6 @@
 import fs from 'fs';
 import sharp from 'sharp';
+import { geoKeyFromStl } from './geoKey.js';
 
 // Pure STL -> JPEG rendering, with no DB or queue state, so it can run in a worker thread.
 
@@ -12,10 +13,12 @@ const MAX_TRIS   = 4_000_000;
 // 3D-printing STLs are almost always Z-up; the renderer's camera is Y-up
 const Z_UP = true;
 
-// Render an STL file to a THUMB_SIZE JPEG. Returns false if the mesh is empty.
+// Render an STL file to a THUMB_SIZE JPEG. Returns the mesh's geo key (so the
+// file is only read once), or null if the mesh is empty.
 export async function renderStlToJpeg(stlPath, outPath, { zUp = Z_UP } = {}) {
-  const mesh = parseSTL(fs.readFileSync(stlPath));
-  if (mesh.count === 0) return false;
+  const buf = fs.readFileSync(stlPath);
+  const mesh = parseSTL(buf);
+  if (mesh.count === 0) return null;
 
   const size = THUMB_SIZE * RENDER_SCALE;
   const rgba = renderMesh(mesh, size, zUp);
@@ -24,7 +27,7 @@ export async function renderStlToJpeg(stlPath, outPath, { zUp = Z_UP } = {}) {
     .resize(THUMB_SIZE, THUMB_SIZE)
     .jpeg({ quality: 82 })
     .toFile(outPath);
-  return true;
+  return geoKeyFromStl(buf);
 }
 
 // ── STL parser ────────────────────────────────────────────────────────────────
